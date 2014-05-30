@@ -458,7 +458,8 @@ function(require, utils, models, simpleMessageTemplate, createClusterWizardTempl
         render: function() {
             var release = this.wizard.findPane(clusterWizardPanes.ClusterNameAndReleasePane).release;
             var hypervisor = this.wizard.findPane(clusterWizardPanes.ClusterComputePane).hypervisor;
-            var disabledDueToRelease = !release || release.get('operating_system') == 'RHEL'; // no Neutron for RHOS for now
+            //var disabledDueToRelease = !release || release.get('operating_system') == 'RHEL'; // no Neutron for RHOS for now
+            var disabledDueToRelease = !release // Neutron 4 RHOS
             var disableDueToHypervisorType = hypervisor == 'vcenter'; // no Neutron for vCenter
             this.$el.html(this.template({
                 disabledDueToRelease: disabledDueToRelease,
@@ -538,6 +539,7 @@ function(require, utils, models, simpleMessageTemplate, createClusterWizardTempl
         render: function() {
             var release = this.wizard.findPane(clusterWizardPanes.ClusterNameAndReleasePane).release;
             var disabledDueToRelease = !release || release.get('operating_system') == 'RHEL'; // no Sahara & Murano for RHOS for now
+            var disabledDueToRelease = !release // allow it anyway
             var networkMode = this.wizard.findPane(clusterWizardPanes.ClusterNetworkPane).manager;
             var disabledDueToNetworkMode = networkMode == 'nova-network'; // no Murano for Nova Network
             this.$el.html(this.template({

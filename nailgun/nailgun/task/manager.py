@@ -137,25 +137,25 @@ class ApplyChangesTaskManager(TaskManager):
                 return supertask
 
         # in case of Red Hat
-        if self.cluster.release.operating_system == "RHEL":
-            try:
-                redhat_messages = self._redhat_messages(
-                    supertask,
-                    # provision only?
-                    [
-                        {"uid": n.id, "platform_name": n.platform_name}
-                        for n in nodes_to_provision
-                    ]
-                )
-            except Exception as exc:
-                TaskHelper.update_task_status(
-                    supertask.uuid,
-                    status='error',
-                    progress=100,
-                    msg=str(exc)
-                )
-                return supertask
-            task_messages.extend(redhat_messages)
+        #if self.cluster.release.operating_system == "RHEL":
+        #    try:
+        #        redhat_messages = self._redhat_messages(
+        #            supertask,
+        #            # provision only?
+        #            [
+        #                {"uid": n.id, "platform_name": n.platform_name}
+        #                for n in nodes_to_provision
+        #            ]
+        #        )
+        #    except Exception as exc:
+        #        TaskHelper.update_task_status(
+        #            supertask.uuid,
+        #            status='error',
+        #            progress=100,
+        #            msg=str(exc)
+        #        )
+        #        return supertask
+        #    task_messages.extend(redhat_messages)
         # /in case of Red Hat
 
         task_deletion, task_provision, task_deployment = None, None, None
