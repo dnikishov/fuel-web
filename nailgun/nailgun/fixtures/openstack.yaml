@@ -814,6 +814,12 @@
             restrictions:
               - "settings:common.libvirt_type.value == 'vcenter'"
         keystone:
+          region:
+            value: "RegionOne"
+            label: "Keystone region name"
+            description: "Geographic location of this cluster"
+            weight: 10
+            type: "text"
           use_ldap:
             value: false
             type: "checkbox"
@@ -823,17 +829,17 @@
           ldap_url:
             value: "ldap://ldap.server.examle.com"
             label: "Ldap URL"
-            weight: 70
+            weight: 40
             type: "text"
           ldap_user:
             value: "cn=username,dc=example,dc=com"
             label: "Ldap username"
-            weight: 70
+            weight: 50
             type: "text"
           ldap_password:
             value: "ThisISSecretP@ssword01"
             label: "Ldap Password"
-            weight: 70
+            weight: 60
             type: "text"
           ldap_suffix:
             value: "dc=example,dc=com"
@@ -843,32 +849,32 @@
           ldap_user_tree_dn:
             value: "cn=users,dc=example,dc=com"
             label: "Users tree dn"
-            weight: 70
+            weight: 80
             type: "text"
           ldap_tenant_tree_dn:
             value: "cn=tenants,dc=example,dc=com"
             label: "Tenants tree dn"
-            weight: 70
+            weight: 90
             type: "text"
           ldap_role_tree_dn:
             value: "cn=roles,dc=example,dc=com"
             label: "Roles tree dn"
-            weight: 70
+            weight: 100
             type: "text"
           ldap_user_filter:
             value: false
             label: "Ldap user filter"
-            weight: 70
+            weight: 110
             type: "text"
           ldap_role_filter:
             value: false
             label: "Ldap role filter"
-            weight: 70
+            weight: 120
             type: "text"
           ldap_tenant_filter:
             value: false
             label: "Ldap tenant filter"
-            weight: 70
+            weight: 130
             type: "text"
         vnc_ports:
           ports_start:
