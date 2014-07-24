@@ -820,6 +820,18 @@
             description: "Geographic location of this cluster"
             weight: 10
             type: "text"
+          token:
+            value: "UUID"
+            label: "Keystone token format"
+            weight: 20
+            type: "radio"
+            values:
+              - data: "UUID"
+                label: "UUID"
+                description: "UUID strings are the default token format for Keystone. They are stored in database and verified against it."
+              - data: "PKI"
+                label: "PKI"
+                description: "PKI tokens are cryptographic strings and Keystone uses public key cryptography to verify tokens."
           use_ldap:
             value: false
             type: "checkbox"
