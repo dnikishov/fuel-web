@@ -805,7 +805,64 @@
             weight: 70
             type: "text"
             restrictions:
-              - "settings:common.libvirt_type.value == 'vcenter'"
+              - "settings:common.libvirt_type.value == 'vcenter'
+        keystone:
+          use_ldap:
+            value: false
+            type: "checkbox"
+            label: "Enable ldap support"
+            weight: 30
+            description: "Mark this if you would like LDAP support"
+          ldap_url:
+            value: "ldap://ldap.server.examle.com"
+            label: "Ldap URL"
+            weight: 70
+            type: "text"
+          ldap_user:
+            value: "cn=username,dc=example,dc=com"
+            label: "Ldap username"
+            weight: 70
+            type: "text"
+          ldap_password:
+            value: "ThisISSecretP@ssword01"
+            label: "Ldap Password"
+            weight: 70
+            type: "text"
+          ldap_suffix:
+            value: "dc=example,dc=com"
+            label: "Ldap suffix"
+            weight: 70
+            type: "text"
+          ldap_user_tree_dn:
+            value: "cn=users,dc=example,dc=com"
+            label: "Users tree dn"
+            weight: 70
+            type: "text"
+          ldap_tenant_tree_dn:
+            value: "cn=tenants,dc=example,dc=com"
+            label: "Tenants tree dn"
+            weight: 70
+            type: "text"
+          ldap_role_tree_dn:
+            value: "cn=roles,dc=example,dc=com"
+            label: "Roles tree dn"
+            weight: 70
+            type: "text"
+          ldap_user_filter:
+            value: false
+            label: "Ldap user filter"
+            weight: 70
+            type: "text"
+          ldap_role_filter:
+            value: false
+            label: "Ldap role filter"
+            weight: 70
+            type: "text"
+          ldap_tenant_filter:
+            value: false
+            label: "Ldap tenant filter"
+            weight: 70
+            type: "text"
       generated:
         sahara:
           user_password:
