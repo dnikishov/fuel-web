@@ -19,3 +19,59 @@ class FuelUpgradeException(Exception):
 
 class ExecutedErrorNonZeroExitCode(FuelUpgradeException):
     pass
+
+
+class CannotRunUpgrade(FuelUpgradeException):
+    pass
+
+
+class DockerExecutedErrorNonZeroExitCode(FuelUpgradeException):
+    pass
+
+
+class DockerFailedToBuildImageError(FuelUpgradeException):
+    pass
+
+
+class CyclicDependenciesError(FuelUpgradeException):
+    pass
+
+
+class CannotFindContainerError(FuelUpgradeException):
+    pass
+
+
+class CannotFindImageError(FuelUpgradeException):
+    pass
+
+
+class TimeoutError(FuelUpgradeException):
+    pass
+
+
+class DatabaseDumpError(FuelUpgradeException):
+    pass
+
+
+class UpgradeVerificationError(FuelUpgradeException):
+    pass
+
+
+class UnsupportedImageTypeError(FuelUpgradeException):
+    pass
+
+
+class WrongCobblerConfigsError(FuelUpgradeException):
+    pass
+
+
+class NotEnoughFreeSpaceOnDeviceError(FuelUpgradeException):
+    pass
+
+
+class WrongVersionError(FuelUpgradeException):
+    pass
+
+
+class UnsupportedActionTypeError(FuelUpgradeException):
+    pass

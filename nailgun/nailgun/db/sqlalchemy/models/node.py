@@ -118,6 +118,8 @@ class Node(Base):
     # hash function from raw node agent request data - for caching purposes
     agent_checksum = Column(String(40), nullable=True)
 
+    ip_addrs = relationship("IPAddr", viewonly=True)
+
     @property
     def interfaces(self):
         return self.nic_interfaces + self.bond_interfaces
@@ -134,7 +136,7 @@ class Node(Base):
     def network_data(self):
         # TODO(enchantner): move to object
         from nailgun.network.manager import NetworkManager
-        return NetworkManager.get_node_networks(self.id)
+        return NetworkManager.get_node_networks(self)
 
     @property
     def volume_manager(self):
@@ -219,21 +221,7 @@ class Node(Base):
         """
         # TODO(enchantner): move to object
         from nailgun.network.manager import NetworkManager
-
-        admin_ng = NetworkManager.get_admin_network_group()
-        for interface in self.interfaces:
-            if admin_ng in interface.assigned_networks_list:
-                return interface
-
-        for interface in self.interfaces:
-            ip_addr = interface.ip_addr
-            if NetworkManager.is_ip_belongs_to_admin_subnet(ip_addr):
-                return interface
-
-        logger.warning(u'Cannot find admin interface for node '
-                       'return first interface: "%s"' %
-                       self.full_name)
-        return self.interfaces[0]
+        return NetworkManager.get_admin_interface(self)
 
     def _check_interface_has_required_params(self, iface):
         return bool(iface.get('name') and iface.get('mac'))

@@ -117,7 +117,7 @@
           min_size: {generator: "calc_min_vm_size"}
           label: "Virtual Storage"
           volumes:
-            - mount: "{{settings.NOVA_STATE_PATH}}"
+            - mount: "/var/lib/nova"
               type: "lv"
               name: "nova"
               size:
@@ -364,7 +364,7 @@
             generator: "password"
           user_password:
             generator: "password"
-          state_path: "{{settings.NOVA_STATE_PATH}}"
+          state_path: "/var/lib/nova"
         rabbit:
           password:
             generator: "password"
@@ -551,7 +551,7 @@
           min_size: {generator: "calc_min_vm_size"}
           label: "Virtual Storage"
           volumes:
-            - mount: "{{settings.NOVA_STATE_PATH}}"
+            - mount: "/var/lib/nova"
               type: "lv"
               name: "nova"
               size:
@@ -707,7 +707,7 @@
   extend: *full_release
   fields:
     name: "Icehouse on CentOS 6.5"
-    version: "2014.1"
+    version: "2014.1.1-5.0.1"
     operating_system: "CentOS"
     description: "This option will install the OpenStack Icehouse packages using a CentOS based operating system. With high availability features built in, you are getting a robust, enterprise-grade OpenStack deployment."
     attributes_metadata:
@@ -744,7 +744,7 @@
   extend: *full_release
   fields:
     name: "Icehouse on Ubuntu 12.04.4"
-    version: "2014.1"
+    version: "2014.1.1-5.0.1"
     operating_system: "Ubuntu"
     description: "This option will install the OpenStack Icehouse packages using Ubuntu as a base operating system. With high availability features built in, you are getting a robust, enterprise-grade OpenStack deployment."
     attributes_metadata:

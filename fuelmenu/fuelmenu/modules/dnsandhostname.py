@@ -15,7 +15,6 @@
 
 from fuelmenu.common import dialog
 from fuelmenu.common.modulehelper import ModuleHelper
-from fuelmenu.common import nailyfactersettings
 from fuelmenu.common import replace
 import fuelmenu.common.urwidwrapper as widget
 from fuelmenu.settings import Settings
@@ -271,10 +270,10 @@ is accessible"}
             etchosts.close()
         #Write dnsmasq upstream server
         with open('/etc/dnsmasq.upstream', 'w') as f:
-            nameservers = responses['DNS_UPSTREAM'].replace(',', ' ')
             f.write("search %s\n" % responses['DNS_SEARCH'])
             f.write("domain %s\n" % responses['DNS_DOMAIN'])
-            f.write("nameserver %s\n" % nameservers)
+            for upstream_dns in responses['DNS_UPSTREAM'].split(','):
+                f.write("nameserver %s\n" % upstream_dns)
         f.close()
 
         return True
@@ -325,14 +324,6 @@ is accessible"}
         Settings().write(newsettings,
                          defaultsfile=self.parent.defaultsettingsfile,
                          outfn=self.parent.settingsfile)
-        #Write naily.facts
-        factsettings = dict()
-        #log.debug(newsettings)
-        for key in newsettings.keys():
-            if key != "blank":
-                factsettings[key] = newsettings[key]
-        n = nailyfactersettings.NailyFacterSettings()
-        n.write(factsettings)
 
         #Set oldsettings to reflect new settings
         self.oldsettings = newsettings
