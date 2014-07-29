@@ -488,6 +488,9 @@
                         "install_ceilometer": "Install Ceilometer (OpenStack Telemetry)",
                         "install_ceilometer_description": "Ceilometer provides metering and monitoring of an OpenStack cloud."
                     },
+                    "vnc_ports": {
+                       "title": "Nova VNC ports"
+                    },
                     "ready": {
                         "title": "Finish",
                         "env_select_deploy": "Your environment is now ready for deployment! After clicking on the Create button, you can select",

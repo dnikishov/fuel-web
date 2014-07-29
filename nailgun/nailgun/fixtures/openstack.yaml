@@ -863,6 +863,17 @@
             label: "Ldap tenant filter"
             weight: 70
             type: "text"
+        vnc_ports:
+          ports_start:
+            value: "5900"
+            label: "VNC starting port"
+            weight: 10
+            type: "text"
+          ports_total:
+            value: "299"
+            label: "Total number of VNC ports"
+            weight: 20
+            type: "text"
       generated:
         sahara:
           user_password:
