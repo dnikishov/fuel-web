@@ -805,7 +805,7 @@
             weight: 70
             type: "text"
             restrictions:
-              - "settings:common.libvirt_type.value == 'vcenter'
+              - "settings:common.libvirt_type.value == 'vcenter'"
         keystone:
           use_ldap:
             value: false
