@@ -848,9 +848,9 @@ class NetworkManager(object):
     def get_node_ip(cls, node, network='public'):
         net = filter(
             lambda n: n['name'] == network and 'ip' in n,
-            Cluster.get_network_manager(
+            objects.Cluster.get_network_manager(
                 node.cluster
-            ).get_node_networks(node.id)
+            ).get_node_networks(node)
         )
 
         if not net:
@@ -873,7 +873,7 @@ class NetworkManager(object):
 
     @classmethod
     def get_zabbix_url(cls, cluster_id):
-        cluster = Cluster.get_by_uid(cluster_id)
+        cluster = objects.Cluster.get_by_uid(cluster_id)
         zabbix_node = filter(
             lambda node: filter(
                 lambda role: role.name == 'zabbix-server',
