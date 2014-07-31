@@ -446,6 +446,13 @@
             description: "Password for Zabbix Administrator"
             weight: 20
             type: "password"
+        ssl:
+          enabled:
+            value: false
+            label: "Enable SSL for OpenStack Services and infrastructure components"
+            description: "If enabled, OpenStack API endpoints will use HTTPS; MySQL, MongoDB and RabbitMQ connections will also be encrypted. HA Proxy will be configured as TCP proxy."
+            type: "checkbox"
+            weight: 10
       generated:
         mysql:
           root_password:
