@@ -25,6 +25,7 @@ class NodeSerializer(BasicSerializer):
         'id',
         'name',
         'meta',
+        'vcenter',
         'progress',
         'kernel_params',
         'roles',

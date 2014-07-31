@@ -546,11 +546,15 @@
                     "ssh_console": "SSH console",
                     "network_configuration_button": "Configure Interfaces",
                     "disk_configuration_button": "Configure Disks",
+                    "vcenter_configuration_button": "Configure vCenter",
                     "close_button": "Close",
                     "total": "total",
                     "bytes": "bytes",
                     "drive": "drive",
                     "drive_plural": "drives"
+                },
+                "edit_vcenter": {
+                    "title": "Edit vCenter Specific Parameters for Node"
                 },
                 "rhel_license": {
                     "title": "Red Hat Enterprise Linux Account Settings",

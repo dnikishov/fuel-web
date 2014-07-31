@@ -27,11 +27,12 @@ define(
     'text!templates/dialogs/reset_environment.html',
     'text!templates/dialogs/update_environment.html',
     'text!templates/dialogs/show_node.html',
+    'text!templates/dialogs/edit_vcenter.html',
     'text!templates/dialogs/dismiss_settings.html',
     'text!templates/dialogs/delete_nodes.html',
     'text!templates/dialogs/change_password.html'
 ],
-function(require, utils, models, viewMixins, baseDialogTemplate, discardChangesDialogTemplate, displayChangesDialogTemplate, removeClusterDialogTemplate, stopDeploymentDialogTemplate, resetEnvironmentDialogTemplate, updateEnvironmentDialogTemplate, showNodeInfoTemplate, discardSettingsChangesTemplate, deleteNodesTemplate, changePasswordTemplate) {
+function(require, utils, models, viewMixins, baseDialogTemplate, discardChangesDialogTemplate, displayChangesDialogTemplate, removeClusterDialogTemplate, stopDeploymentDialogTemplate, resetEnvironmentDialogTemplate, updateEnvironmentDialogTemplate, showNodeInfoTemplate, showEditVCenterTemplate, discardSettingsChangesTemplate, deleteNodesTemplate, changePasswordTemplate) {
     'use strict';
 
     var views = {};
@@ -299,6 +300,7 @@ function(require, utils, models, viewMixins, baseDialogTemplate, discardChangesD
         events: {
             'click .accordion-heading': 'toggle',
             'click .btn-edit-disks': 'goToDisksConfiguration',
+            'click .btn-edit-vcenter': 'openVCenterConfigDialog',
             'click .btn-edit-networks': 'goToInterfacesConfiguration',
             'click .btn-node-console': 'goToSSHConsole'
         },
@@ -310,6 +312,12 @@ function(require, utils, models, viewMixins, baseDialogTemplate, discardChangesD
         },
         goToInterfacesConfiguration: function() {
             app.navigate('#cluster/' + this.node.get('cluster') + '/nodes/interfaces/' + utils.serializeTabOptions({nodes: this.node.id}), {trigger: true});
+        },
+        openVCenterConfigDialog: function(e) {
+            e.preventDefault();
+            var dialog = new views.EditVCenterDialog({node: this.node});
+            app.page.tab.registerSubView(dialog);
+            dialog.render();
         },
         initialize: function(options) {
             _.defaults(this, options);
@@ -335,6 +343,43 @@ function(require, utils, models, viewMixins, baseDialogTemplate, discardChangesD
             });
             return this;
         }
+    });
+
+    views.EditVCenterDialog = views.Dialog.extend({
+        template: _.template(showEditVCenterTemplate),
+        initialize: function(options) {
+            _.defaults(this, options);
+            this.node.fetch({success:function(model) {
+                //console.log(model.get('vcenter'));
+            }});
+            this.node.on('sync', this.render, this);
+//            this.node.sync('update', this.node)
+        },
+        events: {
+            'click .btn-apply': 'applyChanges'
+        },
+        applyChanges: function() {
+           var vcenter = this.node.get('vcenter')
+//           $.when(this.node)
+//               .then(_.bind(function(){
+           vcenter.user = $("#vc_user").val();
+           vcenter.password = $("#vc_password").val();
+           vcenter.cluster = $("#vc_cluster").val();
+           vcenter.regex = $("#vc_regex").val();
+           this.node.set({vcenter: vcenter});
+           this.node.unset('cluster');
+           this.node.unset('network_data');
+           return this.node.save();
+//               }));
+        },
+        render: function() {
+            var vcenter = this.node.get('vcenter');
+            console.log(vcenter)
+            if (vcenter) {
+            this.constructor.__super__.render.call(this, {vcenter: vcenter});
+            };
+            return this;
+        },
     });
 
     views.DiscardSettingsChangesDialog = views.Dialog.extend({

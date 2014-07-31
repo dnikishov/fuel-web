@@ -67,6 +67,7 @@ class Node(NailgunObject):
                 "enum": list(consts.NODE_STATUSES)
             },
             "meta": {"type": "object"},
+            "vcenter": {"type": "object"},
             "mac": {"type": "string"},
             "fqdn": {"type": "string"},
             "manufacturer": {"type": "string"},

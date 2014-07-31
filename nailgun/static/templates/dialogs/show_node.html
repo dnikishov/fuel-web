@@ -78,6 +78,9 @@
   <% if (node.get('cluster')) { %>
     <button class="btn btn-edit-networks" data-dismiss="modal" data-i18n="dialog.show_node.network_configuration_button"></button>
     <button class="btn btn-edit-disks" data-dismiss="modal" data-i18n="dialog.show_node.disk_configuration_button"></button>
+    <% if (node.get('pending_roles').indexOf('compute') != -1) { %>
+    <button class="btn btn-edit-vcenter" data-dismiss="modal" data-i18n="dialog.show_node.vcenter_configuration_button"></button>
+    <% } %>
   <% } %>
   <button class="btn node-modal-close" data-dismiss="modal" data-i18n="dialog.show_node.close_button"></button>
 </div>

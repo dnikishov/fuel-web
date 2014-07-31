@@ -214,7 +214,8 @@ class DeploymentMultinodeSerializer(object):
             'role': role,
             # TODO (eli): need to remove, requried
             # for the fake thread only
-            'online': node.online
+            'online': node.online,
+            'vcenter' : node.vcenter
         }
 
         node_attrs.update(

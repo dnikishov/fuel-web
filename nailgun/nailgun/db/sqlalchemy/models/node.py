@@ -80,6 +80,7 @@ class Node(Base):
         default=consts.NODE_STATUSES.discover
     )
     meta = Column(JSON, default={})
+    vcenter = Column(JSON, default={})
     mac = Column(LowercaseString(17), nullable=False, unique=True)
     ip = Column(String(15))
     fqdn = Column(String(255))

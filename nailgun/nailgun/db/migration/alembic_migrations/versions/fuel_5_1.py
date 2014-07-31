@@ -118,6 +118,10 @@ def upgrade_schema():
             nullable=True
         )
     )
+    op.add_column(
+        'nodes',
+        sa.Column('vcenter', JSON(), nullable=True)
+    )
     op.create_foreign_key(
         'fk_pending_release_id',
         'clusters',
