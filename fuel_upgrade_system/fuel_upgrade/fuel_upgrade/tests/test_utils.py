@@ -55,6 +55,13 @@ class TestUtils(BaseTestCase):
             stderr=subprocess.STDOUT,
             shell=True)
 
+    @mock.patch('fuel_upgrade.utils.exec_cmd',
+                side_effect=errors.ExecutedErrorNonZeroExitCode())
+    def test_safe_exec_cmd(self, exec_mock):
+        cmd = 'some command'
+        utils.safe_exec_cmd(cmd)
+        exec_mock.assert_called_once_with(cmd)
+
     def test_exec_cmd_raises_error_in_case_of_non_zero_exit_code(self):
         cmd = 'some command'
         return_code = 1
@@ -158,7 +165,7 @@ class TestUtils(BaseTestCase):
 
             create_dir_if_not_exists(path)
             mock_isdir.assert_called_once_with(path)
-            mock_makedirs.called_once(path)
+            mock_makedirs.assert_called_once_with(path)
 
     def test_wait_for_true_does_not_raise_errors(self):
         self.assertEqual(wait_for_true(lambda: True, timeout=0), True)
@@ -495,6 +502,12 @@ class TestUtils(BaseTestCase):
     def test_file_exists_returns_false(self, exists_mock):
         self.assertFalse(utils.file_exists('path'))
         exists_mock.assert_called_once_with('path')
+
+    @mock.patch('fuel_upgrade.utils.os.walk')
+    def test_iterfiles(self, walk):
+        for _ in utils.iterfiles('path/to/dir'):
+            pass
+        walk.assert_called_once_with('path/to/dir', topdown=True)
 
 
 class TestVersionedFile(BaseTestCase):

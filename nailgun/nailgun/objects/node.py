@@ -241,6 +241,21 @@ class Node(NailgunObject):
             logger.warning(traceback.format_exc())
 
     @classmethod
+    def set_volumes(cls, instance, volumes_data):
+        """Set volumes for Node instance from JSON data.
+        Adds pending "disks" changes for Cluster which Node belongs to
+
+        :param instance: Node instance
+        :param volumes_data: JSON with new volumes data
+        :returns: None
+        """
+        db().query(models.NodeAttributes).filter_by(
+            node_id=instance.id
+        ).update({'volumes': volumes_data})
+        db().flush()
+        db().refresh(instance)
+
+    @classmethod
     def update_volumes(cls, instance):
         """Update volumes for Node instance.
         Adds pending "disks" changes for Cluster which Node belongs to
@@ -523,7 +538,7 @@ class Node(NailgunObject):
 
         if new_pending_roles == []:
             instance.pending_role_list = []
-            # research why the hell we need this
+            #TODO(enchantner): research why the hell we need this
             Cluster.clear_pending_changes(
                 instance.cluster,
                 node_id=instance.id
@@ -596,11 +611,14 @@ class Node(NailgunObject):
                 instance.cluster,
                 node_id=instance.id
             )
-            Cluster.get_network_manager(
+            netmanager = Cluster.get_network_manager(
                 instance.cluster
-            ).clear_assigned_networks(instance)
+            )
+            netmanager.clear_assigned_networks(instance)
+            netmanager.clear_bond_configuration(instance)
         cls.update_roles(instance, [])
         cls.update_pending_roles(instance, [])
+        cls.remove_replaced_params(instance)
         instance.cluster_id = None
         instance.kernel_params = None
         instance.reset_name_to_default()
@@ -632,6 +650,11 @@ class Node(NailgunObject):
         """
         return (instance.kernel_params or
                 Cluster.get_default_kernel_params(instance.cluster))
+
+    @classmethod
+    def remove_replaced_params(cls, instance):
+        instance.replaced_deployment_info = []
+        instance.replaced_provisioning_info = {}
 
 
 class NodeCollection(NailgunCollection):

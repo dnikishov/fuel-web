@@ -17,7 +17,6 @@
 import glob
 import logging
 import os
-import re
 import time
 
 from copy import deepcopy
@@ -70,6 +69,14 @@ class DockerUpgrader(UpgradeEngine):
         self.save_db()
         self.save_cobbler_configs()
 
+        # NOTE(akislitsky): fix for bug
+        # https://bugs.launchpad.net/fuel/+bug/1354465
+        # supervisord can restart old container even if it already stopped
+        # and new container start will be failed. We switch configs
+        # before upgrade, so if supervisord will try to start container
+        # it will be new container.
+        self.switch_to_new_configs()
+
         # Run upgrade
         self.supervisor.stop_all_services()
         self.stop_fuel_containers()
@@ -80,7 +87,6 @@ class DockerUpgrader(UpgradeEngine):
 
         # Update configs and run new services
         self.generate_configs()
-        self.switch_to_new_configs()
         self.version_file.switch_to_new()
         self.supervisor.restart_and_wait()
         self.upgrade_verifier.verify()
@@ -93,6 +99,33 @@ class DockerUpgrader(UpgradeEngine):
         self.supervisor.stop_all_services()
         self.stop_fuel_containers()
         self.supervisor.restart_and_wait()
+
+    def on_success(self):
+        """Remove saved version files for all upgrades
+
+        NOTE(eli): It solves several problems:
+
+        1. user runs upgrade 5.0 -> 5.1 which fails
+        upgrade system saves version which we upgrade
+        from in file working_dir/5.1/version.yaml.
+        Then user runs upgrade 5.0 -> 5.0.1 which
+        successfully upgraded. Then user runs again
+        upgrade 5.0.1 -> 5.1, but there is saved file
+        working_dir/5.1/version.yaml which contains
+        5.0 version, and upgrade system thinks that
+        it's upgrading from 5.0 version, as result
+        it tries to make database dump from wrong
+        version of container.
+
+        2. without this hack user can run upgrade
+        second time and loose his data, this hack
+        prevents this case because before upgrade
+        checker will use current version instead
+        of saved version to determine version which
+        we run upgrade from.
+        """
+        for version_file in glob.glob(self.config.version_files_mask):
+            utils.remove(version_file)
 
     @property
     def required_free_space(self):
@@ -219,7 +252,7 @@ class DockerUpgrader(UpgradeEngine):
         containers_to_creation = utils.topological_sorting(graph)
         logger.debug(u'Resolved creation order {0}'.format(
             containers_to_creation))
-
+        self._log_iptables()
         for container_id in containers_to_creation:
             container = self.container_by_id(container_id)
             logger.debug(u'Start container {0}'.format(container))
@@ -240,7 +273,7 @@ class DockerUpgrader(UpgradeEngine):
 
             self.start_container(
                 created_container,
-                port_bindings=self.get_port_bindings(container),
+                port_bindings=container.get('port_bindings'),
                 links=links,
                 volumes_from=volumes_from,
                 binds=container.get('binds'),
@@ -248,6 +281,10 @@ class DockerUpgrader(UpgradeEngine):
 
             if container.get('after_container_creation_command'):
                 self.run_after_container_creation_command(container)
+            self.clean_docker_iptables_rules(container)
+        # Save current rules
+        utils.safe_exec_cmd('service iptables save')
+        self._log_iptables()
 
     def run_after_container_creation_command(self, container):
         """Runs command in container with retries in
@@ -278,20 +315,6 @@ class DockerUpgrader(UpgradeEngine):
         utils.exec_cmd(
             "lxc-attach --name {0} -- {1}".format(
                 db_container_id, cmd))
-
-    def get_port_bindings(self, container):
-        """Docker binding accepts port_bindings
-        as tuple, here we convert from list to tuple.
-
-        FIXME(eli): https://github.com/dotcloud/docker-py/blob/
-                    030516eb290ddbd33429e0a111a07b43480ea6e5/
-                    docker/utils/utils.py#L87
-        """
-        port_bindings = container.get('port_bindings')
-        if port_bindings is None:
-            return None
-
-        return dict([(k, tuple(v)) for k, v in port_bindings.iteritems()])
 
     def get_ports(self, container):
         """Docker binding accepts ports as tuple,
@@ -446,10 +469,6 @@ class DockerUpgrader(UpgradeEngine):
 
             self.stop_container(container['Id'])
 
-        public_ports = self._get_docker_container_public_ports(
-            containers_to_stop)
-        self.clean_docker_iptables_rules(public_ports)
-
     def _get_docker_container_public_ports(self, containers):
         """Returns public ports
 
@@ -466,7 +485,7 @@ class DockerUpgrader(UpgradeEngine):
         return [container_port['PublicPort']
                 for container_port in container_ports]
 
-    def clean_docker_iptables_rules(self, ports):
+    def clean_docker_iptables_rules(self, container):
         """Sometimes when we run docker stop
         (version dc9c28f/0.10.0) it doesn't clean
         iptables rules, as result when we run new
@@ -483,21 +502,26 @@ class DockerUpgrader(UpgradeEngine):
           -A DOCKER -p tcp -m tcp --dport 443 -j DNAT \
             --to-destination 172.17.0.3:443
 
-        :param ports: list of ports to clean up
+          -A DOCKER -d 10.108.0.2/32 -p tcp -m tcp --dport \
+            8777 -j DNAT --to-destination 172.17.0.10:8777
+          -A DOCKER -d 127.0.0.1/32 -p tcp -m tcp --dport \
+            8777 -j DNAT --to-destination 172.17.0.11:8777
+          -A DOCKER -d 10.108.0.2/32 -p tcp -m tcp --dport \
+            8777 -j DNAT --to-destination 172.17.0.11:8777
         """
-        rules_to_deletion = []
-        patterns = [re.compile(
-            '^-A DOCKER .+ --dport {0} '
-            '-j DNAT --to-destination .+'.format(port)) for port in ports]
+        utils.safe_exec_cmd('dockerctl post_start_hooks {0}'.format(
+            container['id']))
 
-        for rule in utils.exec_cmd_iterator('iptables -t nat -S'):
-            for pattern in patterns:
-                if pattern.match(rule):
-                    rules_to_deletion.append(rule)
+    def _log_iptables(self):
+        """Method for additional logging of iptables rules
 
-        for rule in rules_to_deletion:
-            # Remove -A (add) prefix and use -D (delete) instead
-            utils.exec_cmd('iptables -t nat -D {0}'.format(rule[2:]))
+        NOTE(eli): Sometimes there are problems with
+        iptables rules like this
+        https://bugs.launchpad.net/fuel/+bug/1349287
+        """
+        utils.safe_exec_cmd('iptables -t nat -S')
+        utils.safe_exec_cmd('iptables -S')
+        utils.safe_exec_cmd('cat /etc/sysconfig/iptables.save')
 
     def stop_container(self, container_id):
         """Stop docker container

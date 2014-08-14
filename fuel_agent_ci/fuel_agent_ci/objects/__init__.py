@@ -12,15 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from fuel_agent_ci.objects.dhcp import Dhcp
-from fuel_agent_ci.objects.environment import Environment
-from fuel_agent_ci.objects.http import Http
-from fuel_agent_ci.objects.network import Network
-from fuel_agent_ci.objects.tftp import Tftp
-from fuel_agent_ci.objects.vm import Disk
-from fuel_agent_ci.objects.vm import Interface
-from fuel_agent_ci.objects.vm import Vm
+# This mapping is supposed to be dynamically filled with
+# names of objects and their types
+
+OBJECT_TYPES = {}
 
 
-__all__ = ['Dhcp', 'Environment', 'Http',
-           'Network', 'Tftp', 'Disk' 'Interface', 'Vm']
+class MetaObject(type):
+    def __init__(self, name, bases, dct):
+        if '__typename__' in dct:
+            OBJECT_TYPES[dct['__typename__']] = self
+        return super(MetaObject, self).__init__(name, bases, dct)
+
+
+class Object(object):
+    __metaclass__ = MetaObject
+    __typename__ = 'object'
+
+    @property
+    def typename(self):
+        return self.__typename__

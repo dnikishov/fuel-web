@@ -98,6 +98,16 @@ class TestDockerUpgrader(BaseTestCase):
         self.called_once(self.version_mock.save_current)
         self.called_once(self.version_mock.switch_to_previous)
 
+    @mock.patch('fuel_upgrade.engines.docker_engine.utils')
+    @mock.patch('fuel_upgrade.engines.docker_engine.glob.glob',
+                return_value=['file1', 'file2'])
+    def test_on_success(self, glob_mock, utils_mock):
+        self.upgrader.on_success()
+        glob_mock.assert_called_once_with(self.fake_config.version_files_mask)
+        self.assertEqual(
+            utils_mock.remove.call_args_list,
+            [mock.call('file1'), mock.call('file2')])
+
     def test_stop_fuel_containers(self):
         non_fuel_images = [
             'first_image_1.0', 'second_image_2.0', 'third_image_2.0']
@@ -110,13 +120,11 @@ class TestDockerUpgrader(BaseTestCase):
         ports = [1, 2, 3]
         self.upgrader._get_docker_container_public_ports = mock.MagicMock(
             return_value=ports)
-        self.upgrader.clean_docker_iptables_rules = mock.MagicMock()
         self.docker_mock.containers.return_value = all_images
         self.upgrader.stop_fuel_containers()
         self.assertEqual(
-            self.docker_mock.stop.call_args_list, [((3, 10),), ((4, 10),)])
-        self.upgrader.clean_docker_iptables_rules.assert_called_once_with(
-            ports)
+            self.docker_mock.stop.call_args_list,
+            [mock.call(3, 10), mock.call(4, 10)])
 
     @mock.patch('fuel_upgrade.engines.docker_engine.utils.exec_cmd')
     @mock.patch('fuel_upgrade.engines.docker_engine.os.path.exists',
@@ -129,8 +137,8 @@ class TestDockerUpgrader(BaseTestCase):
         self.upgrader.upload_images()
         self.assertEqual(
             exec_mock.call_args_list,
-            [(('docker load < "image1"',),),
-             (('docker load < "image2"',),)])
+            [mock.call('docker load < "image1"'),
+             mock.call('docker load < "image2"')])
 
     def test_create_containers(self):
         self.upgrader.new_release_containers = [
@@ -156,18 +164,18 @@ class TestDockerUpgrader(BaseTestCase):
         self.upgrader.create_containers()
 
         create_container_calls = [
-            (('i_name2',), {'detach': False, 'ports': None,
-                            'volumes': None, 'name': 'name2'}),
-            (('i_name1',), {'detach': False, 'ports': None,
-                            'volumes': None, 'name': 'name1'})]
+            mock.call('i_name2', detach=False, ports=None,
+                      volumes=None, name='name2'),
+            mock.call('i_name1', detach=False, ports=None,
+                      volumes=None, name='name1')]
 
         start_container_calls = [
-            (('name2',), {'volumes_from': [],
-                          'binds': None, 'port_bindings': None,
-                          'privileged': False, 'links': []}),
-            (('name1',), {'volumes_from': ['name2'],
-                          'binds': None, 'port_bindings': None,
-                          'privileged': False, 'links': []})]
+            mock.call('name2', volumes_from=[],
+                      binds=None, port_bindings=None,
+                      privileged=False, links=[]),
+            mock.call('name1', volumes_from=['name2'],
+                      binds=None, port_bindings=None,
+                      privileged=False, links=[])]
 
         self.assertEqual(
             self.upgrader.create_container.call_args_list,
@@ -225,11 +233,6 @@ class TestDockerUpgrader(BaseTestCase):
         links = self.upgrader.get_container_links(fake_containers[0])
         self.assertEqual(links, [('container_name2', 'alias2')])
 
-    def test_get_port_bindings(self):
-        port_bindings = {'port_bindings': {'53/udp': ['0.0.0.0', 53]}}
-        bindings = self.upgrader.get_port_bindings(port_bindings)
-        self.assertEqual({'53/udp': ('0.0.0.0', 53)}, bindings)
-
     def test_get_ports(self):
         ports = self.upgrader.get_ports({'ports': [[53, 'udp'], 100]})
         self.assertEqual([(53, 'udp'), 100], ports)
@@ -252,7 +255,7 @@ class TestDockerUpgrader(BaseTestCase):
 
     def test_switch_to_new_configs(self):
         self.upgrader.switch_to_new_configs()
-        self.supervisor_mock.switch_to_new_configs.called_once()
+        self.supervisor_mock.switch_to_new_configs.assert_called_once_with()
 
     @mock.patch('fuel_upgrade.engines.docker_engine.utils.exec_cmd')
     def test_exec_cmd_in_container(self, exec_cmd_mock):
@@ -340,28 +343,12 @@ class TestDockerUpgrader(BaseTestCase):
             self.upgrader._get_docker_container_public_ports(
                 docker_ports_mapping))
 
-    @mock.patch('fuel_upgrade.engines.docker_engine.utils.exec_cmd')
-    @mock.patch('fuel_upgrade.engines.docker_engine.utils.exec_cmd_iterator')
-    def test_clean_docker_iptables_rules(
-            self, exec_cmd_iterator_mock, exec_cmd_mock):
-        iptables_rules = [
-            '-A DOCKER -p tcp -m tcp --dport 1 -j DNAT '
-            '--to-destination 172.17.0.7:1',
-            '-A POSTROUTING -p tcp -m tcp --dport 3 -j DNAT '
-            '--to-destination 172.17.0.7:3',
-            '-A DOCKER -p tcp -m tcp --dport 2 -j DNAT '
-            '--to-destination 172.17.0.3:2']
-
-        exec_cmd_iterator_mock.return_value = iter(iptables_rules)
-        self.upgrader.clean_docker_iptables_rules([1, 2, 3])
-
-        expected_calls = [
-            (('iptables -t nat -D  DOCKER -p tcp -m tcp --dport 1 -j DNAT '
-              '--to-destination 172.17.0.7:1',),),
-            (('iptables -t nat -D  DOCKER -p tcp -m tcp --dport 2 -j DNAT '
-              '--to-destination 172.17.0.3:2',),)]
-
-        self.assertEquals(exec_cmd_mock.call_args_list, expected_calls)
+    @mock.patch('fuel_upgrade.engines.docker_engine.utils.safe_exec_cmd')
+    def test_clean_docker_iptables_rules(self, exec_cmd_mock):
+        container = {'id': 'astute'}
+        self.upgrader.clean_docker_iptables_rules(container)
+        exec_cmd_mock.assert_called_once_with(
+            'dockerctl post_start_hooks astute')
 
     @mock.patch('fuel_upgrade.engines.docker_engine.utils.files_size',
                 return_value=5)
@@ -471,4 +458,4 @@ class TestDockerUpgrader(BaseTestCase):
 
         self.assertEqual(
             mock_utils.remove_if_exists.call_args_list,
-            [(('file4',),), (('file5',),)])
+            [mock.call('file4'), mock.call('file5')])

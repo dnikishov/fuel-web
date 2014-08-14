@@ -22,10 +22,10 @@ from nailgun.api.v1.handlers.base import BaseHandler
 from nailgun.api.v1.handlers.base import content_json
 from nailgun.api.v1.validators.node import NodesFilterValidator
 
-from nailgun.db.sqlalchemy.models import Cluster
-from nailgun.db.sqlalchemy.models import Node
 from nailgun.logger import logger
-from nailgun.objects import Task
+
+from nailgun import objects
+
 from nailgun.orchestrator import deployment_serializers
 from nailgun.orchestrator import provisioning_serializers
 from nailgun.task.helpers import TaskHelper
@@ -51,7 +51,10 @@ class NodesFilterMixin(object):
 
         if nodes:
             node_ids = self.checked_data(data=nodes)
-            return self.get_objects_list_or_404(Node, node_ids)
+            return self.get_objects_list_or_404(
+                objects.NodeCollection,
+                node_ids
+            )
 
         return self.get_default_nodes(cluster)
 
@@ -70,9 +73,10 @@ class DefaultOrchestratorInfo(NodesFilterMixin, BaseHandler):
         :http: * 200 (OK)
                * 404 (cluster not found in db)
         """
-        cluster = self.get_object_or_404(Cluster, cluster_id)
+        cluster = self.get_object_or_404(objects.Cluster, cluster_id)
         nodes = self.get_nodes(cluster)
-        return self._serializer.serialize(cluster, nodes)
+        return self._serializer.serialize(
+            cluster, nodes, ignore_customized=True)
 
 
 class OrchestratorInfo(BaseHandler):
@@ -96,7 +100,7 @@ class OrchestratorInfo(BaseHandler):
         :http: * 200 (OK)
                * 404 (cluster not found in db)
         """
-        cluster = self.get_object_or_404(Cluster, cluster_id)
+        cluster = self.get_object_or_404(objects.Cluster, cluster_id)
         return self.get_orchestrator_info(cluster)
 
     @content_json
@@ -106,7 +110,7 @@ class OrchestratorInfo(BaseHandler):
                * 400 (wrong data specified)
                * 404 (cluster not found in db)
         """
-        cluster = self.get_object_or_404(Cluster, cluster_id)
+        cluster = self.get_object_or_404(objects.Cluster, cluster_id)
         data = self.checked_data()
         self.update_orchestrator_info(cluster, data)
         logger.debug('OrchestratorInfo:'
@@ -121,7 +125,7 @@ class OrchestratorInfo(BaseHandler):
                * 400 (failed to execute orchestrator data deletion process)
                * 404 (cluster not found in db)
         """
-        cluster = self.get_object_or_404(Cluster, cluster_id)
+        cluster = self.get_object_or_404(objects.Cluster, cluster_id)
         self.update_orchestrator_info(cluster, {})
 
         raise self.http(202, '{}')
@@ -146,21 +150,19 @@ class DefaultDeploymentInfo(DefaultOrchestratorInfo):
 class ProvisioningInfo(OrchestratorInfo):
 
     def get_orchestrator_info(self, cluster):
-        return cluster.replaced_provisioning_info
+        return objects.Cluster.get_provisioning_info(cluster)
 
     def update_orchestrator_info(self, cluster, data):
-        cluster.replace_provisioning_info(data)
-        return cluster.replaced_provisioning_info
+        return objects.Cluster.replace_provisioning_info(cluster, data)
 
 
 class DeploymentInfo(OrchestratorInfo):
 
     def get_orchestrator_info(self, cluster):
-        return cluster.replaced_deployment_info
+        return objects.Cluster.get_deployment_info(cluster)
 
     def update_orchestrator_info(self, cluster, data):
-        cluster.replace_deployment_info(data)
-        return cluster.replaced_deployment_info
+        return objects.Cluster.replace_deployment_info(cluster, data)
 
 
 class SelectedNodesBase(NodesFilterMixin, BaseHandler):
@@ -173,7 +175,7 @@ class SelectedNodesBase(NodesFilterMixin, BaseHandler):
                * 404 (cluster or nodes not found in db)
                * 400 (failed to execute task)
         """
-        cluster = self.get_object_or_404(Cluster, cluster_id)
+        cluster = self.get_object_or_404(objects.Cluster, cluster_id)
         nodes = self.get_nodes(cluster)
 
         try:
@@ -184,7 +186,7 @@ class SelectedNodesBase(NodesFilterMixin, BaseHandler):
                 task_manager.__class__.__name__, traceback.format_exc()))
             raise self.http(400, message=str(exc))
 
-        raise self.http(202, Task.to_json(task))
+        raise self.http(202, objects.Task.to_json(task))
 
 
 class ProvisionSelectedNodes(SelectedNodesBase):

@@ -16,14 +16,19 @@
 
 
 import mock
+import os
 
 from fuel_upgrade.tests.base import BaseTestCase
 
 from fuel_upgrade.pre_upgrade_hooks.base import PreUpgradeHookBase
 from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_add_credentials \
     import AddCredentialsHook
-from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_add_versions_yaml \
-    import AddVersionsYaml
+from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_fix_puppet_manifests \
+    import FixPuppetManifests
+from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_kill_supervisord \
+    import KillSupervisordHook
+from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_sync_dns \
+    import SyncDnsHook
 from fuel_upgrade.pre_upgrade_hooks import PreUpgradeHookManager
 
 
@@ -72,10 +77,13 @@ class TestAddCredentialsHook(TestPreUpgradeHooksBase):
         self.assertFalse(hook.check_if_required())
 
     @mock.patch('fuel_upgrade.pre_upgrade_hooks.'
+                'from_5_0_to_any_add_credentials.read_yaml_config')
+    @mock.patch('fuel_upgrade.pre_upgrade_hooks.'
                 'from_5_0_to_any_add_credentials.utils')
-    def test_run(self, utils_mock):
+    def test_run(self, utils_mock, read_yaml_config_mock):
         file_key = 'this_key_was_here_before_upgrade'
         hook = self.get_hook({file_key: file_key})
+        read_yaml_config_mock.return_value = hook.config.astute
         hook.run()
 
         utils_mock.copy_file.assert_called_once_with(
@@ -95,31 +103,132 @@ class TestAddCredentialsHook(TestPreUpgradeHooksBase):
             for key in agrs[0][1].keys()))
 
 
-class TestAddVersionsYamlHook(TestPreUpgradeHooksBase):
+class TestSyncDnsHook(TestPreUpgradeHooksBase):
 
     def setUp(self):
-        super(TestAddVersionsYamlHook, self).setUp()
-        self.hook = AddVersionsYaml(self.upgraders, self.fake_config)
+        super(TestSyncDnsHook, self).setUp()
+        self.additional_keys = [
+            'DNS_DOMAIN',
+            'DNS_SEARCH']
 
-    @mock.patch(
-        'fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_add_versions_yaml.'
-        'os.path.exists', return_value=False)
-    def test_is_required_returns_true(self, _):
+    def get_hook(self, astute):
+        config = self.fake_config
+        config.astute = astute
+        return SyncDnsHook(self.upgraders, config)
+
+    def test_is_required_returns_true(self):
+        hook = self.get_hook({
+            'DNS_DOMAIN': 'veryunlikelydomain',
+            'DNS_SEARCH': 'veryunlikelydomain'})
+        self.assertTrue(hook.check_if_required())
+
+    def test_is_required_returns_false(self):
+        hostname, sep, realdomain = os.uname()[1].partition('.')
+        hook = self.get_hook({
+            'DNS_DOMAIN': realdomain,
+            'DNS_SEARCH': realdomain})
+
+        self.assertFalse(hook.check_if_required())
+
+    @mock.patch('fuel_upgrade.pre_upgrade_hooks.'
+                'from_5_0_to_any_sync_dns.read_yaml_config')
+    @mock.patch('fuel_upgrade.pre_upgrade_hooks.'
+                'from_5_0_to_any_sync_dns.utils')
+    def test_run(self, utils_mock, read_yaml_config):
+        file_key = 'this_key_was_here_before_upgrade'
+        hook = self.get_hook({file_key: file_key})
+        read_yaml_config.return_value = hook.config.astute
+        hook.run()
+
+        utils_mock.copy_file.assert_called_once_with(
+            '/etc/fuel/astute.yaml',
+            '/etc/fuel/astute.yaml_0',
+            overwrite=False)
+
+        args = utils_mock.save_as_yaml.call_args
+        self.assertEqual(args[0][0], '/etc/fuel/astute.yaml')
+
+        # Check that the key which was in file
+        # won't be overwritten
+        self.additional_keys.append(file_key)
+        # Check that all required keys are in method call
+        self.assertTrue(all(
+            key in self.additional_keys
+            for key in args[0][1].keys()))
+
+
+class TestFixPuppetManifestHook(TestPreUpgradeHooksBase):
+
+    iterfiles_returns = [
+        '/tmp/upgrade_path/config/5.0/modules/package/lib/puppet'
+        '/provider/package/yum.rb',
+        '/tmp/upgrade_path/config/5.0/manifests/centos-versions.yaml']
+
+    def setUp(self):
+        super(TestFixPuppetManifestHook, self).setUp()
+
+        conf = self.fake_config
+        conf.from_version = '5.0'
+
+        self.hook = FixPuppetManifests(self.upgraders, conf)
+
+    def test_is_required_returns_true(self):
+        self.hook.config.from_version = '5.0'
         self.assertTrue(self.hook.check_if_required())
 
-    @mock.patch(
-        'fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_add_versions_yaml.'
-        'os.path.exists', return_value=True)
-    def test_is_required_returns_false(self, _):
+        self.hook.config.from_version = '5.0.1'
+        self.assertTrue(self.hook.check_if_required())
+
+    def test_is_required_returns_false(self):
+        self.hook.config.from_version = '5.1'
         self.assertFalse(self.hook.check_if_required())
 
     @mock.patch(
-        'fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_add_versions_yaml.'
+        'fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_fix_puppet_manifests.'
+        'iterfiles', return_value=iterfiles_returns)
+    @mock.patch(
+        'fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_fix_puppet_manifests.'
         'copy')
-    def test_run(self, copy):
+    def test_run(self, copy, _):
         self.hook.run()
 
-        self.called_times(copy, len(self.hook.versions_yaml))
+        copy.assert_has_calls([
+            mock.call(
+                '/tmp/upgrade_path/config/5.0/modules/package/lib'
+                '/puppet/provider/package/yum.rb',
+                '/etc/puppet/modules/package/lib/puppet/provider/package'
+                '/yum.rb'),
+            mock.call(
+                '/tmp/upgrade_path/config/5.0/manifests'
+                '/centos-versions.yaml',
+                '/etc/puppet/manifests/centos-versions.yaml')])
+
+
+class TestKillSupervisordHook(TestPreUpgradeHooksBase):
+
+    def setUp(self):
+        super(TestKillSupervisordHook, self).setUp()
+        self.hook = KillSupervisordHook(self.upgraders, self.fake_config)
+
+    def test_is_required_returns_true(self):
+        self.hook.config.from_version = '5.0'
+        self.assertTrue(self.hook.check_if_required())
+
+    def test_is_required_returns_false(self):
+        self.hook.config.from_version = '5.1'
+        self.assertFalse(self.hook.check_if_required())
+
+    @mock.patch(
+        'fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_kill_supervisord.'
+        'safe_exec_cmd')
+    def test_run(self, exec_cmd):
+        self.hook.run()
+
+        exec_cmd.assert_has_calls([
+            mock.call('kill -9 `cat /var/run/supervisord.pid`'),
+            mock.call('rm -f /var/run/supervisord.pid'),
+            mock.call('pkill -f "docker.*D.*attach.*fuel-core"'),
+            mock.call('pkill -f "dockerctl.*start.*attach"')])
 
 
 class TestPreUpgradeHookBase(TestPreUpgradeHooksBase):

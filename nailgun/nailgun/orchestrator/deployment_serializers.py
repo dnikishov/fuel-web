@@ -17,6 +17,7 @@
 """Deployment serializers for orchestrator"""
 
 from copy import deepcopy
+from itertools import groupby
 
 from netaddr import IPNetwork
 from sqlalchemy import and_
@@ -69,17 +70,44 @@ def get_nodes_not_for_deletion(cluster):
 
 class DeploymentMultinodeSerializer(object):
 
+    critical_roles = ['controller', 'ceph-osd', 'primary-mongo']
+
     @classmethod
-    def serialize(cls, cluster, nodes):
+    def serialize(cls, cluster, nodes, ignore_customized=False):
         """Method generates facts which
         through an orchestrator passes to puppet
         """
+        serialized_nodes = []
+        keyfunc = lambda node: bool(node.replaced_deployment_info)
+        for customized, node_group in groupby(nodes, keyfunc):
+            if customized and not ignore_customized:
+                serialized_nodes.extend(
+                    cls.serialize_customized(cluster, node_group))
+            else:
+                serialized_nodes.extend(cls.serialize_generated(
+                    cluster, node_group))
+        return serialized_nodes
+
+    @classmethod
+    def serialize_generated(cls, cluster, nodes):
         nodes = cls.serialize_nodes(nodes)
         common_attrs = cls.get_common_attrs(cluster)
 
         cls.set_deployment_priorities(nodes)
+        cls.set_critical_nodes(cluster, nodes)
 
         return [dict_merge(node, common_attrs) for node in nodes]
+
+    @classmethod
+    def serialize_customized(cls, cluster, nodes):
+        serialized = []
+        release_data = objects.Release.get_orchestrator_data_dict(
+            cls.current_release(cluster))
+        for node in nodes:
+            for role_data in node.replaced_deployment_info:
+                role_data.update(release_data)
+                serialized.append(role_data)
+        return serialized
 
     @classmethod
     def get_common_attrs(cls, cluster):
@@ -87,9 +115,7 @@ class DeploymentMultinodeSerializer(object):
         attrs = objects.Attributes.merged_attrs_values(
             cluster.attributes
         )
-        release = objects.Release.get_by_uid(cluster.pending_release_id) \
-            if cluster.status == consts.CLUSTER_STATUSES.update \
-            else cluster.release
+        release = cls.current_release(cluster)
         attrs['deployment_mode'] = cluster.mode
         attrs['deployment_id'] = cluster.id
         attrs['openstack_version'] = release.version
@@ -112,6 +138,13 @@ class DeploymentMultinodeSerializer(object):
                                                                       attrs))
 
         return attrs
+
+    @classmethod
+    def current_release(cls, cluster):
+        """Actual cluster release."""
+        return objects.Release.get_by_uid(cluster.pending_release_id) \
+            if cluster.status == consts.CLUSTER_STATUSES.update \
+            else cluster.release
 
     @classmethod
     def set_storage_parameters(cls, cluster, attrs):
@@ -186,6 +219,14 @@ class DeploymentMultinodeSerializer(object):
                                        'primary-mongo',
                                        'zabbix-server']):
             n['priority'] = other_nodes_prior
+
+    @classmethod
+    def set_critical_nodes(cls, cluster, nodes):
+        """Set behavior on nodes deployment error
+        during deployment process.
+        """
+        for n in nodes:
+            n['fail_if_error'] = n['role'] in cls.critical_roles
 
     @classmethod
     def serialize_nodes(cls, nodes):
@@ -268,7 +309,7 @@ class DeploymentMultinodeSerializer(object):
                 'img_path': '{0}cirros-i386-disk.vmdk'.format(img_dir),
             })
             glance_properties.append('--property vmware_disktype=sparse')
-            glance_properties.append('--property vmware_adaptertype=ide')
+            glance_properties.append('--property vmware_adaptertype=lsiLogic')
             glance_properties.append('--property hypervisor_type=vmware')
 
         image_data['glance_properties'] = ' '.join(glance_properties)
@@ -316,6 +357,11 @@ class DeploymentMultinodeSerializer(object):
 
 class DeploymentHASerializer(DeploymentMultinodeSerializer):
     """Serializer for ha mode."""
+
+    critical_roles = ['primary-controller',
+                      'primary-mongo',
+                      'primary-swift-proxy',
+                      'ceph-osd']
 
     @classmethod
     def serialize_nodes(cls, nodes):
@@ -422,10 +468,17 @@ class DeploymentHASerializer(DeploymentMultinodeSerializer):
         for n in cls.by_role(nodes, 'primary-controller'):
             n['priority'] = prior.next
 
-        # Then deploy other controllers
-        controllers_priority = prior.next
-        for n in cls.by_role(nodes, 'controller'):
-            n['priority'] = controllers_priority
+        # Then deploy other controllers.
+        # We are deploying in parallel, so do
+        # not let us deploy more than 6 controllers
+        # simultaneously or galera master may be exhausted
+
+        secondary_controllers = cls.by_role(nodes, 'controller')
+
+        for index, node in enumerate(secondary_controllers):
+            if index % 6 == 0:
+                sec_controller_priority = prior.next
+            node['priority'] = sec_controller_priority
 
         other_nodes_prior = prior.next
         for n in cls.not_roles(nodes, ['primary-swift-proxy',
@@ -997,7 +1050,7 @@ class NeutronNetworkDeploymentSerializer(NetworkDeploymentSerializer):
         return iface_attrs
 
 
-def serialize(cluster, nodes):
+def serialize(cluster, nodes, ignore_customized=False):
     """Serialization depends on deployment mode
     """
     objects.NodeCollection.prepare_for_deployment(cluster.nodes)
@@ -1007,4 +1060,5 @@ def serialize(cluster, nodes):
     elif cluster.is_ha_mode:
         serializer = DeploymentHASerializer
 
-    return serializer.serialize(cluster, nodes)
+    return serializer.serialize(
+        cluster, nodes, ignore_customized=ignore_customized)

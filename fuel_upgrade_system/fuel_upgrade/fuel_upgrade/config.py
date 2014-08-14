@@ -27,9 +27,11 @@ Why python based config?
   and it's hard to create variables nesting more than 1
 """
 
+import glob
 import logging
 import yaml
 
+from os.path import basename
 from os.path import exists
 from os.path import join
 
@@ -174,6 +176,41 @@ def get_endpoints(astute_config):
             'password': rabbitmq_mcollective_access['password']}}
 
 
+def get_host_system(update_path, new_version):
+    """Returns host-system settings.
+
+    The function was designed to build a dictionary with settings for
+    host-sytem upgrader. Why we can't just use static settings? Because
+    we need to build paths to latest centos repos (tarball could contain
+    a few openstack releases, so we need to pick right centos repo) and
+    to latest puppet manifests.
+
+    :param update_path: path to update folder
+    :param new_version: fuel version to install
+    :returns: a host-system upgrade settings
+    """
+    openstack_versions = glob.glob(
+        join(update_path, 'puppet', '[0-9.-]*{0}'.format(new_version)))
+    openstack_versions = [
+        basename(v) for v in openstack_versions]
+    openstack_version = sorted(openstack_versions, reverse=True)[0]
+
+    return {
+        'manifest_path': join(
+            update_path, 'puppet', openstack_version,
+            'modules/nailgun/examples/host-only.pp'),
+
+        'puppet_modules_path': join(
+            update_path, 'puppet', openstack_version, 'modules'),
+
+        'repo_config_path': join(
+            '/etc/yum.repos.d',
+            '{0}_nailgun.repo'.format(new_version)),
+
+        'repo_path': join(
+            update_path, 'repos', openstack_version, 'centos/x86_64')}
+
+
 def config(update_path):
     """Generates configuration data for upgrade
 
@@ -190,6 +227,7 @@ def config(update_path):
     new_version = get_version_from_config(new_upgrade_version_path)
     new_version_path = join('/etc/fuel', new_version, 'version.yaml')
 
+    version_files_mask = '/var/lib/fuel_upgrade/*/version.yaml'
     working_directory = join('/var/lib/fuel_upgrade', new_version)
 
     from_version_path = join(working_directory, 'version.yaml')
@@ -300,13 +338,17 @@ def config(update_path):
 
     # Docker containers description section
     container_prefix = 'fuel-core-'
+    master_ip = astute['ADMIN_NETWORK']['ipaddress']
 
     containers = [
 
         {'id': 'nailgun',
          'supervisor_config': True,
          'from_image': 'nailgun',
-         'port_bindings': {'8001': ['0.0.0.0', 8001]},
+         'port_bindings': {
+             '8001': [
+                 ('127.0.0.1', 8001),
+                 (master_ip, 8001)]},
          'ports': [8001],
          'links': [
              {'id': 'postgres', 'alias': 'db'},
@@ -337,10 +379,14 @@ def config(update_path):
          'from_image': 'cobbler',
          'privileged': True,
          'port_bindings': {
-             '80': ['0.0.0.0', 80],
-             '443': ['0.0.0.0', 443],
-             '53/udp': ['0.0.0.0', 53],
-             '69/udp': ['0.0.0.0', 69]},
+             '80': ('0.0.0.0', 80),
+             '443': ('0.0.0.0', 443),
+             '53/udp': [
+                 ('127.0.0.1', 53),
+                 (master_ip, 53)],
+             '69/udp': [
+                 ('127.0.0.1', 69),
+                 (master_ip, 69)]},
          'ports': [
              [53, 'udp'],
              [53, 'tcp'],
@@ -371,7 +417,9 @@ def config(update_path):
          'supervisor_config': True,
          'from_image': 'rsync',
          'port_bindings': {
-             '873': ['0.0.0.0', 873]},
+             '873': [
+                 ('127.0.0.1', 873),
+                 (master_ip, 873)]},
          'ports': [873],
          'volumes_from': [
              'volume_logs',
@@ -383,8 +431,15 @@ def config(update_path):
          'supervisor_config': True,
          'from_image': 'rsyslog',
          'port_bindings': {
-             '514': ['0.0.0.0', 514],
-             '514/udp': ['0.0.0.0', 514]},
+             '514': [
+                 ('127.0.0.1', 514),
+                 (master_ip, 514)],
+             '514/udp': [
+                 ('127.0.0.1', 514),
+                 (master_ip, 514)],
+             '25150': [
+                 ('127.0.0.1', 25150),
+                 (master_ip, 25150)]},
          'ports': [[514, 'udp'], 514],
          'volumes_from': [
              'volume_logs',
@@ -395,8 +450,8 @@ def config(update_path):
          'supervisor_config': True,
          'from_image': 'keystone',
          'port_bindings': {
-             '5000': ['0.0.0.0', 5000],
-             '35357': ['0.0.0.0', 35357]},
+             '5000': ('0.0.0.0', 5000),
+             '35357': ('0.0.0.0', 35357)},
          'ports': [5000, 35357],
          'links': [
              {'id': 'postgres', 'alias': 'postgres'}],
@@ -409,8 +464,8 @@ def config(update_path):
          'supervisor_config': True,
          'from_image': 'nginx',
          'port_bindings': {
-             '8000': ['0.0.0.0', 8000],
-             '8080': ['0.0.0.0', 8080]},
+             '8000': ('0.0.0.0', 8000),
+             '8080': ('0.0.0.0', 8080)},
          'ports': [8000, 8080],
          'links': [
              {'id': 'nailgun', 'alias': 'nailgun'},
@@ -427,10 +482,18 @@ def config(update_path):
          'supervisor_config': True,
          'from_image': 'rabbitmq',
          'port_bindings': {
-             '4369': ['0.0.0.0', 4369],
-             '5672': ['0.0.0.0', 5672],
-             '15672': ['0.0.0.0', 15672],
-             '61613': ['0.0.0.0', 61613]},
+             '4369': [
+                 ('127.0.0.1', 4369),
+                 (master_ip, 4369)],
+             '5672': [
+                 ('127.0.0.1', 5672),
+                 (master_ip, 5672)],
+             '15672': [
+                 ('127.0.0.1', 15672),
+                 (master_ip, 15672)],
+             '61613': [
+                 ('127.0.0.1', 61613),
+                 (master_ip, 61613)]},
          'ports': [5672, 4369, 15672, 61613],
          'volumes_from': [
              'volume_logs',
@@ -441,7 +504,9 @@ def config(update_path):
          'supervisor_config': True,
          'from_image': 'ostf',
          'port_bindings': {
-             '8777': ['0.0.0.0', 8777]},
+             '8777': [
+                 ('127.0.0.1', 8777),
+                 (master_ip, 8777)]},
          'ports': [8777],
          'links': [
              {'id': 'postgres', 'alias': 'db'},
@@ -459,7 +524,9 @@ def config(update_path):
          'supervisor_config': True,
          'from_image': 'postgres',
          'port_bindings': {
-             '5432': ['0.0.0.0', 5432]},
+             '5432': [
+                 ('127.0.0.1', 5432),
+                 (master_ip, 5432)]},
          'ports': [5432],
          'volumes_from': [
              'volume_logs',
@@ -532,52 +599,21 @@ def config(update_path):
                  'bind': '/tmp/upgrade',
                  'ro': True}}}]
 
-    # This node contains settings of OpenStack upgrader. So please keep all
-    # related settings there. Please keep in mind that all paths are relative
-    # to source directory that's passed as a command line argument.
+    # Openstack Upgrader settings. Please note, that "[0-9.-]*" is
+    # a glob pattern for matching our os versions
     openstack = {
-        'releases': join(update_path, 'config', 'openstack.yaml'),
+        'releases': join(update_path, 'releases', '*.yaml'),
 
-        'actions': [
-            {
-                'name': 'copy',
-                'from': join(update_path, 'puppet', 'manifests'),
-                'to': join('/etc/puppet', new_version, 'manifests'),
-            },
-            {
-                'name': 'copy',
-                'from': join(update_path, 'puppet', 'modules'),
-                'to': join('/etc/puppet', new_version, 'modules'),
-            },
-            {
-                'name': 'copy',
-                'from': join(update_path, 'repos', 'centos'),
-                'to': join('/var/www/nailgun', new_version, 'centos'),
-            },
-            {
-                'name': 'copy',
-                'from': join(update_path, 'repos/ubuntu'),
-                'to': join('/var/www/nailgun', new_version, 'ubuntu'),
-            }
-        ]}
+        'puppets': {
+            'src': join(update_path, 'puppet', '[0-9.-]*'),
+            'dst': join('/etc', 'puppet')},
+
+        'repos': {
+            'src': join(update_path, 'repos', '[0-9.-]*'),
+            'dst': join('/var', 'www', 'nailgun')}}
 
     # Config for host system upgarde engine
-    host_system = {
-        'manifest_path': join(
-            update_path,
-            'puppet/modules/nailgun/examples/host-only.pp'),
-
-        'puppet_modules_path': join(
-            update_path,
-            'puppet/modules/'),
-
-        'repo_config_path': join(
-            '/etc/yum.repos.d',
-            '{0}_nailgun.repo'.format(new_version)),
-
-        'repo_path': join(
-            update_path,
-            'repos/centos/x86_64')}
+    host_system = get_host_system(update_path, new_version)
 
     # Config for bootstrap upgrade
     bootstrap = {

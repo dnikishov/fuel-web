@@ -281,6 +281,27 @@ class TestNovaOrchestratorSerializer(OrchestratorSerializerTestBase):
         ]
         self.assertEqual(expected_priorities, nodes)
 
+    def test_set_critital_node(self):
+        nodes = [
+            {'role': 'mongo'},
+            {'role': 'mongo'},
+            {'role': 'primary-mongo'},
+            {'role': 'controller'},
+            {'role': 'ceph-osd'},
+            {'role': 'other'}
+        ]
+        serializer = DeploymentMultinodeSerializer()
+        serializer.set_critical_nodes(self.cluster, nodes)
+        expected_ciritial_roles = [
+            {'role': 'mongo', 'fail_if_error': False},
+            {'role': 'mongo', 'fail_if_error': False},
+            {'role': 'primary-mongo', 'fail_if_error': True},
+            {'role': 'controller', 'fail_if_error': True},
+            {'role': 'ceph-osd', 'fail_if_error': True},
+            {'role': 'other', 'fail_if_error': False}
+        ]
+        self.assertEqual(expected_ciritial_roles, nodes)
+
 
 class TestNovaOrchestratorHASerializer(OrchestratorSerializerTestBase):
 
@@ -339,6 +360,78 @@ class TestNovaOrchestratorHASerializer(OrchestratorSerializerTestBase):
             {'role': 'other', 'priority': 900}
         ]
         self.assertEqual(expected_priorities, nodes)
+
+    def test_set_deployment_priorities_many_cntrls(self):
+        nodes = [
+            {'role': 'zabbix-server'},
+            {'role': 'primary-swift-proxy'},
+            {'role': 'swift-proxy'},
+            {'role': 'storage'},
+            {'role': 'mongo'},
+            {'role': 'primary-mongo'},
+            {'role': 'primary-controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'ceph-osd'},
+            {'role': 'other'}
+        ]
+        self.serializer.set_deployment_priorities(nodes)
+        expected_priorities = [
+            {'role': 'zabbix-server', 'priority': 100},
+            {'role': 'primary-swift-proxy', 'priority': 200},
+            {'role': 'swift-proxy', 'priority': 300},
+            {'role': 'storage', 'priority': 400},
+            {'role': 'mongo', 'priority': 500},
+            {'role': 'primary-mongo', 'priority': 600},
+            {'role': 'primary-controller', 'priority': 700},
+            {'role': 'controller', 'priority': 800},
+            {'role': 'controller', 'priority': 800},
+            {'role': 'controller', 'priority': 800},
+            {'role': 'controller', 'priority': 800},
+            {'role': 'controller', 'priority': 800},
+            {'role': 'controller', 'priority': 800},
+            {'role': 'controller', 'priority': 900},
+            {'role': 'controller', 'priority': 900},
+            {'role': 'ceph-osd', 'priority': 1000},
+            {'role': 'other', 'priority': 1000}
+        ]
+        self.assertEqual(expected_priorities, nodes)
+
+    def test_set_critital_node(self):
+        nodes = [
+            {'role': 'zabbix-server'},
+            {'role': 'primary-swift-proxy'},
+            {'role': 'swift-proxy'},
+            {'role': 'storage'},
+            {'role': 'mongo'},
+            {'role': 'primary-mongo'},
+            {'role': 'primary-controller'},
+            {'role': 'controller'},
+            {'role': 'controller'},
+            {'role': 'ceph-osd'},
+            {'role': 'other'}
+        ]
+        self.serializer.set_critical_nodes(self.cluster, nodes)
+        expected_ciritial_roles = [
+            {'role': 'zabbix-server', 'fail_if_error': False},
+            {'role': 'primary-swift-proxy', 'fail_if_error': True},
+            {'role': 'swift-proxy', 'fail_if_error': False},
+            {'role': 'storage', 'fail_if_error': False},
+            {'role': 'mongo', 'fail_if_error': False},
+            {'role': 'primary-mongo', 'fail_if_error': True},
+            {'role': 'primary-controller', 'fail_if_error': True},
+            {'role': 'controller', 'fail_if_error': False},
+            {'role': 'controller', 'fail_if_error': False},
+            {'role': 'ceph-osd', 'fail_if_error': True},
+            {'role': 'other', 'fail_if_error': False}
+        ]
+        self.assertEqual(expected_ciritial_roles, nodes)
 
     def test_set_primary_controller_priority_not_depend_on_nodes_order(self):
         controllers = filter(lambda n: 'controller' in n.roles, self.env.nodes)
@@ -623,7 +716,7 @@ class TestNeutronOrchestratorSerializer(OrchestratorSerializerTestBase):
         cluster_id = cluster.id
         editable_attrs = self._make_data_copy(cluster.attributes.editable)
 
-        #value of kernel-ml should end up with vlan_splinters = off
+        # value of kernel-ml should end up with vlan_splinters = off
         editable_attrs['vlan_splinters']['metadata']['enabled'] = True
         editable_attrs['vlan_splinters']['vswitch']['value'] = 'kernel_lt'
         cluster.attributes.editable = editable_attrs
@@ -958,24 +1051,25 @@ class TestMongoNodesSerialization(OrchestratorSerializerTestBase):
 
 class TestRepoAndPuppetDataSerialization(OrchestratorSerializerTestBase):
 
+    orch_data = {
+        "repo_metadata": {
+            "nailgun":
+            "http://10.20.0.2:8080/centos-5.0/centos/fuelweb/x86_64/"
+        },
+        "puppet_modules_source":
+        "rsync://10.20.0.2/puppet/release/5.0/modules",
+        "puppet_manifests_source":
+        "rsync://10.20.0.2/puppet/release/5.0/manifests"
+    }
+
     def test_repo_and_puppet_data_w_orch_data(self):
         release_id = self.env.create_release().id
 
-        orch_data = {
-            "repo_metadata": {
-                "nailgun":
-                "http://10.20.0.2:8080/centos-5.0/centos/fuelweb/x86_64/"
-            },
-            "puppet_modules_source":
-            "rsync://10.20.0.2/puppet/release/5.0/modules",
-            "puppet_manifests_source":
-            "rsync://10.20.0.2/puppet/release/5.0/manifests"
-        }
         resp = self.app.put(
             reverse('ReleaseHandler', kwargs={'obj_id': release_id}),
             params=jsonutils.dumps(
                 {
-                    "orchestrator_data": orch_data
+                    "orchestrator_data": self.orch_data
                 }
             ),
             headers=self.default_headers,
@@ -1046,6 +1140,28 @@ class TestRepoAndPuppetDataSerialization(OrchestratorSerializerTestBase):
             fact['puppet_manifests_source'],
             'rsync://127.0.0.1:/puppet/manifests/'
         )
+
+    def test_orch_data_w_replaced_deployment_info(self):
+        replaced_deployment_info = [{'repo_metadata': 'custom_stuff'}]
+        release = self.env.create_release()
+        self.env.create(
+            cluster_kwargs={'release_id': release.id},
+            nodes_kwargs=[
+                {'roles': ['controller'], 'pending_addition': True}
+            ])
+        objects.Release.update_orchestrator_data(release, self.orch_data)
+        self.db.flush()
+        self.db.refresh(release)
+        self.env.nodes[0].replaced_deployment_info = replaced_deployment_info
+
+        facts = self.serializer.serialize(
+            self.env.clusters[0], self.env.nodes)
+        self.assertEqual(facts[0]['repo_metadata'],
+                         self.orch_data['repo_metadata'])
+        self.assertEqual(facts[0]['puppet_modules_source'],
+                         self.orch_data['puppet_modules_source'])
+        self.assertEqual(facts[0]['puppet_manifests_source'],
+                         self.orch_data['puppet_manifests_source'])
 
 
 class TestNSXOrchestratorSerializer(OrchestratorSerializerTestBase):
