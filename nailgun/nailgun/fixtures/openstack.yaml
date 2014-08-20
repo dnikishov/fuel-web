@@ -860,6 +860,11 @@
             label: "Enable ldap support"
             weight: 30
             description: "Mark this if you would like LDAP support"
+          admin_role:
+            value: "PCE-Admins"
+            label: "Admin Role"
+            weight: 60
+            type: "text"
           ldap_url:
             value: "ldap://ldap.server.examle.com"
             label: "Ldap URL"
