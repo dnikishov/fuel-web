@@ -294,9 +294,8 @@ class NodeAgent
   end
 
   def _disk_path_by_name(name)
-    dn = "/dev/disk/by-path"
-    basepath = Dir["#{dn}/**?"].find{|f| /\/#{name}$/.match(File.readlink(f))}
-    basepath.split("/")[2..-1].join("/") if basepath
+    path = `udevadm info -q path -n #{name}`
+    path.split('block')[0] if path
   end
 
   def physical_data_storage_devices
@@ -315,9 +314,10 @@ class NodeAgent
       devname = basename_dir.gsub(/!/, '/')
 
       @logger.debug("Getting udev properties for device: #{devname}")
-      properties = `udevadm info --query=property --export --name=#{devname}`.inject({}) do |result, raw_propety|
-       key, value = raw_propety.split(/\=/)
-       result.update(key.strip => value.strip.chomp("'").reverse.chomp("'").reverse)
+      properties = {}
+      `udevadm info --query=property --export --name=#{devname}`.split("\n").each do |raw_propety|
+        key, value = raw_propety.split(/\=/)
+        properties[key.strip] = value.strip.chomp("'").reverse.chomp("'").reverse
       end
       @logger.debug("Device #{devname} udev properties: #{properties.inspect}")
 
@@ -377,7 +377,7 @@ class NodeAgent
   # * for physical HW that would be unique chassis id (from BIOS settings)
   # * for other hypervizors - not tested
   def uuid
-    node_uuid = @os.fetch(:dmi, {}).fetch(:system, {}).fetch(:uuid, nil)
+    node_uuid = @os.data.fetch(:dmi, {}).fetch(:system, {}).fetch(:uuid, nil)
     node_uuid && node_uuid.strip
   end
 
