@@ -910,6 +910,46 @@
             label: "Ldap tenant filter"
             weight: 130
             type: "text"
+          ldap_tenant_id_prefix:
+            value: false
+            label: "Ldap tenant ID prefix"
+            weight: 170
+            type: "text"
+          ldap_role_id_prefix:
+            value: false
+            label: "Ldap role ID prefix"
+            weight: 180
+            type: "text"
+          ldap_nova_password:
+            value: "password"
+            label: "Password for Nova to use with AD"
+            weight: 190
+            type: "password"
+          ldap_glance_password:
+            value: "password"
+            label: "Password for Glance to use with AD"
+            weight: 200
+            type: "password"
+          ldap_swift_password:
+            value: "password"
+            label: "Password for Swift to use with AD"
+            weight: 210
+            type: "password"
+          ldap_cinder_password:
+            value: "password"
+            label: "Password for Cinder to use with AD"
+            weight: 220
+            type: "password"
+          ldap_ceilometer_password:
+            value: "password"
+            label: "Password for Ceilometer to use with AD"
+            weight: 230
+            type: "password"
+          ldap_heat_password:
+            value: "password"
+            label: "Password for Heat to use with AD"
+            weight: 240
+            type: "password"
         vnc_ports:
           metadata:
             weight: 3
