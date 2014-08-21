@@ -366,6 +366,7 @@ function(require, utils, models, viewMixins, baseDialogTemplate, discardChangesD
            vcenter.password = $("#vc_password").val();
            vcenter.cluster = $("#vc_cluster").val();
            vcenter.regex = $("#vc_regex").val();
+           vcenter.gw_ip = $("#vc_gwip").val();
            this.node.set({vcenter: vcenter});
            this.node.unset('cluster');
            this.node.unset('network_data');
