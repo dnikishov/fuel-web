@@ -924,6 +924,34 @@
             label: "Total number of VNC ports"
             weight: 20
             type: "text"
+        logging:
+          metadata:
+            weight: 4
+            label: "Logging"
+          use_logstash:
+            value: false
+            label: "Send logs from OpenStack components to a remote Logstash server"
+            description: ""
+            weight: 10
+            type: "checkbox"
+          logstash_host:
+            value: "@@127.0.0.1:5544"
+            label: "Remote host string"
+            weight: 20
+            description: "It should be in rsyslog format (@@ prefix for tcp, @ for udp and so on)"
+            type: "text"
+          logstash_json:
+            value: false
+            label: "Format logs into JSON"
+            description: ""
+            weight: 30
+            type: "checkbox"
+          logstash_json_template:
+            value: '{\"@timestamp\":\"%timestamp:::date-rfc3339%\",\"@host\":\"%hostname%\",\"@message\":\"%timestamp% %app-name%:%msg%\",\"@tag\":\"%syslogtag%\",\"@severity\":\"%syslogseverity-text%\"}'
+            label: "JSON log format"
+            weight: 40
+            type: "text"
+            description: ""
       generated:
         sahara:
           user_password:
