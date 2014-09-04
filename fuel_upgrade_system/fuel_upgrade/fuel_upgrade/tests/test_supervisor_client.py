@@ -17,15 +17,16 @@
 import mock
 import xmlrpclib
 
-from fuel_upgrade.supervisor_client import SupervisorClient
+from fuel_upgrade.clients import SupervisorClient
 from fuel_upgrade.tests.base import BaseTestCase
 
 
-@mock.patch('fuel_upgrade.supervisor_client.os')
+@mock.patch('fuel_upgrade.clients.supervisor_client.os')
 class TestSupervisorClient(BaseTestCase):
 
     def setUp(self):
-        self.utils_patcher = mock.patch('fuel_upgrade.supervisor_client.utils')
+        self.utils_patcher = mock.patch(
+            'fuel_upgrade.clients.supervisor_client.utils')
         self.utils_mock = self.utils_patcher.start()
 
         self.supervisor = SupervisorClient(self.fake_config, '0')
@@ -70,36 +71,52 @@ class TestSupervisorClient(BaseTestCase):
             self.assertIsNone(self.supervisor.get_all_processes_safely())
 
     def test_generate_configs(self, _):
+        services = [
+            {'config_name': 'config_name1',
+             'service_name': 'service_name1',
+             'command': 'cmd1',
+             'autostart': True},
+            {'config_name': 'config_name2',
+             'service_name': 'service_name2',
+             'command': 'cmd2',
+             'autostart': False}]
+
         self.supervisor.generate_config = mock.MagicMock()
-        self.supervisor.generate_configs([1, 2, 3])
+        self.supervisor.generate_configs(services)
         self.assertEqual(
             self.supervisor.generate_config.call_args_list,
-            [mock.call(1), mock.call(2), mock.call(3)])
+            [mock.call('config_name1', 'service_name1',
+                       'cmd1', autostart=True),
+             mock.call('config_name2', 'service_name2',
+                       'cmd2', autostart=False)])
 
     def test_generate_config(self, _):
         config_path = '/config/path'
-        with mock.patch('fuel_upgrade.supervisor_client.os.path.join',
+        with mock.patch('fuel_upgrade.clients.supervisor_client.os.path.join',
                         return_value=config_path):
             self.supervisor.generate_config(
-                {'service_name': 'service_name1', 'command': 'command1'})
+                'confing_name1', 'docker-service_name1', 'command1')
 
         self.utils_mock.render_template_to_file.assert_called_once_with(
             self.supervisor.supervisor_template_path,
             config_path,
-            {'service_name': 'service_name1',
+            {'service_name': 'docker-service_name1',
              'command': 'command1',
-             'log_path': '/var/log/docker-service_name1.log'})
+             'log_path': '/var/log/docker-service_name1.log',
+             'autostart': 'true'})
 
     def test_generate_cobbler_config(self, _):
         paths = ['script_path', '/path/cobbler_config', '']
         self.supervisor.generate_config = mock.MagicMock()
         with mock.patch(
-                'fuel_upgrade.supervisor_client.os.path.join',
+                'fuel_upgrade.clients.supervisor_client.os.path.join',
                 side_effect=paths):
 
             self.supervisor.generate_cobbler_config(
-                {'container_name': 'container_name1',
-                 'service_name': 'service_name1'})
+                'config_name1',
+                'service_name1',
+                'container_name1',
+                autostart=False)
 
         self.utils_mock.render_template_to_file.assert_called_once_with(
             paths[0],
@@ -107,5 +124,7 @@ class TestSupervisorClient(BaseTestCase):
             {'container_name': 'container_name1'})
 
         self.supervisor.generate_config.assert_called_once_with(
-            {'service_name': 'service_name1',
-             'command': 'container_name1'})
+            'config_name1',
+            'service_name1',
+            'container_name1',
+            autostart=False)

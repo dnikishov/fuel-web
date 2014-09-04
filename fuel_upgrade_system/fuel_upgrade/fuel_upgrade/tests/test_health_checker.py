@@ -68,16 +68,18 @@ class TestBaseChecker(BaseTestCase):
         self.assertEquals(resp['code'], 200)
 
     @mock.patch('fuel_upgrade.health_checker.requests.get')
-    def test_safe_get_connection_error(self, requests_get):
-        requests_get.side_effect = requests.exceptions.ConnectionError()
-        resp = self.make_get_request()
-        self.assertEquals(resp, None)
+    def test_safe_get_exception_raised(self, requests_get):
+        exceptions = [
+            requests.exceptions.ConnectionError(),
+            requests.exceptions.Timeout(),
+            requests.exceptions.HTTPError(),
+            ValueError(),
+            socket.timeout()]
 
-    @mock.patch('fuel_upgrade.health_checker.requests.get')
-    def test_safe_get_timeout_error(self, requests_get):
-        requests_get.side_effect = requests.exceptions.Timeout()
-        resp = self.make_get_request()
-        self.assertEquals(resp, None)
+        for exception in exceptions:
+            requests_get.side_effect = exception
+            resp = self.make_get_request()
+            self.assertEquals(resp, None)
 
     @mock.patch('fuel_upgrade.health_checker.requests.get')
     def test_safe_get_non_json_response(self, requests_get):
@@ -390,3 +392,15 @@ class TestCheckers(BaseTestCase):
             get_mock.return_value = result
             self.assert_checker_false(
                 health_checker.IntegrationCheckerRabbitMQAstuteNailgun)
+
+    @mock.patch('fuel_upgrade.health_checker.BaseChecker.make_safe_request')
+    def test_nailgun_checker_returns_true(self, make_request_mock):
+        make_request_mock.return_value = 200
+        self.assert_checker_true(
+            health_checker.IntegrationOSTFKeystoneChecker)
+
+    @mock.patch('fuel_upgrade.health_checker.BaseChecker.make_safe_request')
+    def test_nailgun_checker_returns_false(self, make_request_mock):
+        make_request_mock.return_value = 401
+        self.assert_checker_false(
+            health_checker.IntegrationOSTFKeystoneChecker)

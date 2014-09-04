@@ -452,7 +452,7 @@
                         "vcenter_password_description": "vCenter admin password",
                         "vcenter_cluster": "Cluster",
                         "vcenter_cluster_description": "vCenter cluster name. If you have multiple clusters, use comma separated names.",
-                        "vcenter_ip_warning": "Invalid IP format",
+                        "vcenter_ip_warning": "Invalid IPv4 address",
                         "vcenter_user_warning": "Username cannot be empty",
                         "vcenter_password_warning": "Password cannot be empty",
                         "vcenter_cluster_warning": "Invalid cluster list"
@@ -471,6 +471,7 @@
                         "alert": "Ceph is not supported in __NameAndRelease.release_name__",
                         "cinder_vcenter_alert": "Ceph backend for Cinder cannot be used with vCenter.",
                         "glance_vcenter_alert": "Ceph backend for Glance cannot be used with vCenter.",
+                        "vmdk_alert": "VMDK driver is a default option for vCenter. Also please change a Cinder LVM option to a Cinder VMDK option in the environment settings.",
                         "default": "Default",
                         "ceph": "Ceph",
                         "cinder": "Cinder",
@@ -607,7 +608,9 @@
                     "title": "Change Password",
                     "current_password": "Current password",
                     "new_password": "New password",
-                    "wrong_current_password": "Wrong password"
+                    "confirm_new_password": "Confirm new password",
+                    "wrong_current_password": "Wrong password",
+                    "new_password_mismatch": "Passwords do not match"
                 }
             }
         }

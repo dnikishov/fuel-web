@@ -19,7 +19,6 @@ import os
 
 from fuel_upgrade.engines.base import UpgradeEngine
 from fuel_upgrade import utils
-from fuel_upgrade.version_file import VersionFile
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +59,11 @@ class HostSystemUpgrader(UpgradeEngine):
         #: path to repository config
         self.repo_config_path = self.host_system_config['repo_config_path']
 
-        #: path to local repository
-        self.repo_path = self.host_system_config['repo_path']
+        #: src repository path
+        self.repo_src = self.host_system_config['repo_path']['src']
 
-        #: version file manager
-        self.version_file = VersionFile(self.config)
-        self.version_file.save_current()
+        #: dst repository path
+        self.repo_dst = self.host_system_config['repo_path']['dst']
 
     @property
     def required_free_space(self):
@@ -82,7 +80,7 @@ class HostSystemUpgrader(UpgradeEngine):
     def upgrade(self):
         """Run host system upgrade process
         """
-        self.version_file.switch_to_new()
+        self.copy_repo()
         self.update_repo()
         self.run_puppet()
 
@@ -90,12 +88,19 @@ class HostSystemUpgrader(UpgradeEngine):
         """The only thing which we can rollback here
         is yum config
         """
-        self.version_file.switch_to_previous()
         self.remove_repo_config()
 
     def on_success(self):
         """Do nothing for this engine
         """
+
+    def copy_repo(self):
+        """Copy centos repo on the host system.
+        We need to make sure that when user
+        removes temporary files after upgrade
+        his repo path is valid.
+        """
+        utils.copy(self.repo_src, self.repo_dst)
 
     def update_repo(self):
         """Add new centos repository
@@ -104,7 +109,7 @@ class HostSystemUpgrader(UpgradeEngine):
             self.repo_template_path,
             self.repo_config_path,
             {'version': self.version,
-             'repo_path': self.repo_path})
+             'repo_path': self.repo_dst})
 
     def run_puppet(self):
         """Run puppet to upgrade host system

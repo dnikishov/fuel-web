@@ -24,9 +24,9 @@ from copy import deepcopy
 import docker
 import requests
 
+from fuel_upgrade.clients import SupervisorClient
 from fuel_upgrade.engines.base import UpgradeEngine
 from fuel_upgrade.health_checker import FuelUpgradeVerify
-from fuel_upgrade.supervisor_client import SupervisorClient
 from fuel_upgrade.version_file import VersionFile
 
 from fuel_upgrade import errors
@@ -68,6 +68,7 @@ class DockerUpgrader(UpgradeEngine):
         # Preapre env for upgarde
         self.save_db()
         self.save_cobbler_configs()
+        self.save_astute_keys()
 
         # NOTE(akislitsky): fix for bug
         # https://bugs.launchpad.net/fuel/+bug/1354465
@@ -77,18 +78,25 @@ class DockerUpgrader(UpgradeEngine):
         # it will be new container.
         self.switch_to_new_configs()
 
-        # Run upgrade
+        # Stop all of the services
         self.supervisor.stop_all_services()
         self.stop_fuel_containers()
+        # Upload docker images
         self.upload_images()
-        self.stop_fuel_containers()
-        self.create_containers()
-        self.stop_fuel_containers()
 
-        # Update configs and run new services
-        self.generate_configs()
+        # Generate config with autostart is false
+        # not to run new services on supervisor restart
+        self.generate_configs(autostart=False)
         self.version_file.switch_to_new()
+        # Restart supervisor to read new configs
         self.supervisor.restart_and_wait()
+        # Create container and start it under supervisor
+        self.create_and_start_new_containers()
+        # Update configs in order to start all
+        # services on supervisor restart
+        self.generate_configs(autostart=True)
+
+        # Verify that all services up and running
         self.upgrade_verifier.verify()
 
     def rollback(self):
@@ -157,23 +165,10 @@ class DockerUpgrader(UpgradeEngine):
         pg_dump_files = utils.VersionedFile(pg_dump_path)
         pg_dump_tmp_path = pg_dump_files.next_file_name()
 
-        try:
-            container_name = self.make_container_name(
-                'postgres', self.from_version)
-
-            self.exec_cmd_in_container(
-                container_name,
-                u"su postgres -c 'pg_dumpall --clean' > {0}".format(
-                    pg_dump_tmp_path))
-        except (errors.ExecutedErrorNonZeroExitCode,
-                errors.CannotFindContainerError) as exc:
-            utils.remove_if_exists(pg_dump_tmp_path)
-            if not utils.file_exists(pg_dump_path):
-                raise
-
-            logger.debug(
-                u'Failed to make database dump, '
-                'will be used dump from previous run: %s', exc)
+        utils.wait_for_true(
+            lambda: self.make_pg_dump(pg_dump_tmp_path, pg_dump_path),
+            timeout=self.config.db_backup_timeout,
+            interval=self.config.db_backup_interval)
 
         valid_dumps = filter(utils.verify_postgres_dump,
                              pg_dump_files.sorted_files())
@@ -186,6 +181,66 @@ class DockerUpgrader(UpgradeEngine):
                 u'Failed to make database dump, there '
                 'are no valid database backup '
                 'files, {0}'.format(pg_dump_path))
+
+    def make_pg_dump(self, pg_dump_tmp_path, pg_dump_path):
+        """Run postgresql dump in container
+
+        :param str pg_dump_tmp_path: path to temporary dump file
+        :param str pg_dump_path: path to dump which will be restored
+                                 in the new container, if this file is
+                                 exists, it means the user already
+                                 ran upgrade and for some reasons it
+                                 failed
+        :returns: True if db was successfully dumped or if dump exists
+                  False if container isn't running or dump isn't succeed
+        """
+        try:
+            container_name = self.make_container_name(
+                'postgres', self.from_version)
+
+            self.exec_cmd_in_container(
+                container_name,
+                u"su postgres -c 'pg_dumpall --clean' > {0}".format(
+                    pg_dump_tmp_path))
+        except (errors.ExecutedErrorNonZeroExitCode,
+                errors.CannotFindContainerError) as exc:
+            utils.remove_if_exists(pg_dump_tmp_path)
+            if not utils.file_exists(pg_dump_path):
+                logger.debug('Failed to make database dump {0}'.format(exc))
+                return False
+
+            logger.debug(
+                u'Failed to make database dump, '
+                'will be used dump from previous run: %s', exc)
+
+        return True
+
+    def save_astute_keys(self):
+        """Copy any astute generated keys."""
+        container_name = self.make_container_name('astute', self.from_version)
+        utils.remove(self.config.astute_keys_path)
+        try:
+            utils.exec_cmd('docker cp {0}:{1} {2}'.format(
+                container_name,
+                self.config.astute_container_keys_path,
+                self.config.working_directory))
+        except errors.ExecutedErrorNonZeroExitCode as exc:
+            # If there was error, mostly it's because of error
+            #
+            #   Error: Could not find the file /var/lib/astute
+            #   in container fuel-core-5.0-astute
+            #
+            # It means that user didn't run deployment on his
+            # env, because this directory is created by orchestrator
+            # during the first deployment.
+            # Also it can fail if there was no running container
+            # in both case we should create empty directory to copy
+            # it in after container creation section
+            logger.debug(
+                'Cannot copy astute keys, creating empty directory '
+                '%s: %s', self.config.astute_keys_path, exc)
+            if not utils.file_exists(self.config.astute_keys_path):
+                os.mkdir(self.config.astute_keys_path)
 
     def save_cobbler_configs(self):
         """Copy config files from container
@@ -243,7 +298,7 @@ class DockerUpgrader(UpgradeEngine):
             # `docker load`
             utils.exec_cmd(u'docker load < "{0}"'.format(docker_image))
 
-    def create_containers(self):
+    def create_and_start_new_containers(self):
         """Create containers in the right order
         """
         logger.info(u'Started containers creation')
@@ -252,7 +307,7 @@ class DockerUpgrader(UpgradeEngine):
         containers_to_creation = utils.topological_sorting(graph)
         logger.debug(u'Resolved creation order {0}'.format(
             containers_to_creation))
-        self._log_iptables()
+
         for container_id in containers_to_creation:
             container = self.container_by_id(container_id)
             logger.debug(u'Start container {0}'.format(container))
@@ -279,12 +334,13 @@ class DockerUpgrader(UpgradeEngine):
                 binds=container.get('binds'),
                 privileged=container.get('privileged', False))
 
+            if container.get('supervisor_config'):
+                self.start_service_under_supervisor(
+                    self.make_service_name(container['id']))
+                self.clean_iptables_rules(container)
+
             if container.get('after_container_creation_command'):
                 self.run_after_container_creation_command(container)
-            self.clean_docker_iptables_rules(container)
-        # Save current rules
-        utils.safe_exec_cmd('service iptables save')
-        self._log_iptables()
 
     def run_after_container_creation_command(self, container):
         """Runs command in container with retries in
@@ -330,6 +386,13 @@ class DockerUpgrader(UpgradeEngine):
 
         return [port if not isinstance(port, list) else tuple(port)
                 for port in ports]
+
+    def start_service_under_supervisor(self, service_name):
+        """Start service under supervisor
+
+        :param str service_name: name of the service
+        """
+        self.supervisor.start(service_name)
 
     def exec_with_retries(
             self, func, exceptions, message, retries=0, interval=0):
@@ -378,7 +441,7 @@ class DockerUpgrader(UpgradeEngine):
 
         return graph
 
-    def generate_configs(self):
+    def generate_configs(self, autostart=True):
         """Generates supervisor configs
         and saves them to configs directory
         """
@@ -386,9 +449,11 @@ class DockerUpgrader(UpgradeEngine):
 
         for container in self.new_release_containers:
             params = {
-                'service_name': container['id'],
+                'config_name': container['id'],
+                'service_name': self.make_service_name(container['id']),
                 'command': u'docker start -a {0}'.format(
-                    container['container_name'])
+                    container['container_name']),
+                'autostart': autostart
             }
             if container['supervisor_config']:
                 configs.append(params)
@@ -397,8 +462,13 @@ class DockerUpgrader(UpgradeEngine):
 
         cobbler_container = self.container_by_id('cobbler')
         self.supervisor.generate_cobbler_config(
-            {'service_name': cobbler_container['id'],
-             'container_name': cobbler_container['container_name']})
+            cobbler_container['id'],
+            self.make_service_name(cobbler_container['id']),
+            cobbler_container['container_name'],
+            autostart=autostart)
+
+    def make_service_name(self, container_name):
+        return 'docker-{0}'.format(container_name)
 
     def switch_to_new_configs(self):
         """Switches supervisor to new configs
@@ -485,7 +555,7 @@ class DockerUpgrader(UpgradeEngine):
         return [container_port['PublicPort']
                 for container_port in container_ports]
 
-    def clean_docker_iptables_rules(self, container):
+    def clean_iptables_rules(self, container):
         """Sometimes when we run docker stop
         (version dc9c28f/0.10.0) it doesn't clean
         iptables rules, as result when we run new
@@ -509,8 +579,14 @@ class DockerUpgrader(UpgradeEngine):
           -A DOCKER -d 10.108.0.2/32 -p tcp -m tcp --dport \
             8777 -j DNAT --to-destination 172.17.0.11:8777
         """
+        if not container.get('port_bindings'):
+            return
+
+        self._log_iptables()
         utils.safe_exec_cmd('dockerctl post_start_hooks {0}'.format(
             container['id']))
+        utils.safe_exec_cmd('service iptables save')
+        self._log_iptables()
 
     def _log_iptables(self):
         """Method for additional logging of iptables rules

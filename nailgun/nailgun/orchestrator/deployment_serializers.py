@@ -112,12 +112,13 @@ class DeploymentMultinodeSerializer(object):
     @classmethod
     def get_common_attrs(cls, cluster):
         """Cluster attributes."""
-        attrs = objects.Attributes.merged_attrs_values(
-            cluster.attributes
-        )
+        attrs = objects.Attributes.merged_attrs_values(cluster.attributes)
         release = cls.current_release(cluster)
+
         attrs['deployment_mode'] = cluster.mode
         attrs['deployment_id'] = cluster.id
+        attrs['openstack_version_prev'] = getattr(
+            cls.previous_release(cluster), 'version', None)
         attrs['openstack_version'] = release.version
         attrs['fuel_version'] = cluster.fuel_version
         attrs.update(
@@ -145,6 +146,18 @@ class DeploymentMultinodeSerializer(object):
         return objects.Release.get_by_uid(cluster.pending_release_id) \
             if cluster.status == consts.CLUSTER_STATUSES.update \
             else cluster.release
+
+    @classmethod
+    def previous_release(cls, cluster):
+        """Returns previous release.
+
+        :param cluster: a ``Cluster`` instance to retrieve release from
+        :returns: a ``Release`` instance of previous release or ``None``
+            in case there's no previous release (fresh deployment).
+        """
+        if cluster.status == consts.CLUSTER_STATUSES.update:
+            return cluster.release
+        return None
 
     @classmethod
     def set_storage_parameters(cls, cluster, attrs):
@@ -309,7 +322,7 @@ class DeploymentMultinodeSerializer(object):
                 'img_path': '{0}cirros-i386-disk.vmdk'.format(img_dir),
             })
             glance_properties.append('--property vmware_disktype=sparse')
-            glance_properties.append('--property vmware_adaptertype=lsiLogic')
+            glance_properties.append('--property vmware_adaptertype=ide')
             glance_properties.append('--property hypervisor_type=vmware')
 
         image_data['glance_properties'] = ' '.join(glance_properties)
@@ -508,6 +521,9 @@ class NetworkDeploymentSerializer(object):
             netw_data = node.network_data
             addresses = {}
             for net in node.cluster.network_groups:
+                if net.name == 'public' and \
+                        not objects.Node.should_have_public(node):
+                    continue
                 if net.meta.get('render_addr_mask'):
                     addresses.update(cls.get_addr_mask(
                         netw_data,
@@ -631,12 +647,19 @@ class NovaNetworkDeploymentSerializer(NetworkDeploymentSerializer):
 
         # network_size is required for all managers, otherwise
         # puppet will use default (255)
-        attrs['network_size'] = cluster.network_config.fixed_network_size
-        if attrs['network_manager'] == 'VlanManager':
+        if attrs['network_manager'] == consts.NOVA_NET_MANAGERS.VlanManager:
             attrs['num_networks'] = \
                 cluster.network_config.fixed_networks_amount
             attrs['vlan_start'] = \
                 cluster.network_config.fixed_networks_vlan_start
+            attrs['network_size'] = cluster.network_config.fixed_network_size
+        elif (attrs['network_manager'] ==
+              consts.NOVA_NET_MANAGERS.FlatDHCPManager):
+            # We need set maximum available size for specific mask for FlatDHCP
+            # because default 256 caused problem
+            net_cidr = IPNetwork(cluster.network_config.fixed_networks_cidr)
+            attrs['network_size'] = net_cidr.size
+            attrs['num_networks'] = 1
 
         return attrs
 
@@ -866,8 +889,7 @@ class NeutronNetworkDeploymentSerializer(NetworkDeploymentSerializer):
         cluster_attrs = Cluster.get_attributes(cluster).editable
         if 'nsx_plugin' in cluster_attrs and \
                 cluster_attrs['nsx_plugin']['metadata']['enabled']:
-            server_attrs = attrs.setdefault('server', {})
-            server_attrs['core_plugin'] = 'vmware'
+            attrs['L2']['provider'] = 'nsx'
 
         return attrs
 
@@ -882,18 +904,20 @@ class NeutronNetworkDeploymentSerializer(NetworkDeploymentSerializer):
             'interfaces': {},  # It's a list of physical interfaces.
             'endpoints': {
                 'br-storage': {},
-                'br-ex': {},
                 'br-mgmt': {},
                 'br-fw-admin': {},
             },
             'roles': {
-                'ex': 'br-ex',
                 'management': 'br-mgmt',
                 'storage': 'br-storage',
                 'fw-admin': 'br-fw-admin',
             },
             'transformations': []
         }
+
+        if objects.Node.should_have_public(node):
+            attrs['endpoints']['br-ex'] = {}
+            attrs['roles']['ex'] = 'br-ex'
 
         nm = objects.Node.get_network_manager(node)
         iface_types = consts.NETWORK_INTERFACE_TYPES
@@ -951,7 +975,11 @@ class NeutronNetworkDeploymentSerializer(NetworkDeploymentSerializer):
         # We have to add them after br-ethXX bridges because it is the way
         # to provide a right ordering of ifdown/ifup operations with
         # IP interfaces.
-        for brname in ('br-ex', 'br-mgmt', 'br-storage', 'br-fw-admin'):
+        brnames = ['br-mgmt', 'br-storage', 'br-fw-admin']
+        if objects.Node.should_have_public(node):
+            brnames.append('br-ex')
+
+        for brname in brnames:
             attrs['transformations'].append({
                 'action': 'add-br',
                 'name': brname
@@ -960,10 +988,12 @@ class NeutronNetworkDeploymentSerializer(NetworkDeploymentSerializer):
         # Populate IP address information to endpoints.
         netgroup_mapping = [
             ('storage', 'br-storage'),
-            ('public', 'br-ex'),
             ('management', 'br-mgmt'),
             ('fuelweb_admin', 'br-fw-admin'),
         ]
+        if objects.Node.should_have_public(node):
+            netgroup_mapping.append(('public', 'br-ex'))
+
         netgroups = {}
         for ngname, brname in netgroup_mapping:
             # Here we get a dict with network description for this particular
@@ -971,7 +1001,11 @@ class NeutronNetworkDeploymentSerializer(NetworkDeploymentSerializer):
             netgroup = nm.get_node_network_by_netname(node, ngname)
             attrs['endpoints'][brname]['IP'] = [netgroup['ip']]
             netgroups[ngname] = netgroup
-        attrs['endpoints']['br-ex']['gateway'] = netgroups['public']['gateway']
+        if objects.Node.should_have_public(node):
+            attrs['endpoints']['br-ex']['gateway'] = \
+                netgroups['public']['gateway']
+        else:
+            attrs['endpoints']['br-fw-admin']['gateway'] = settings.MASTER_IP
 
         # Connect interface bridges to network bridges.
         for ngname, brname in netgroup_mapping:

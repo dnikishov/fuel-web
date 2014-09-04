@@ -21,12 +21,12 @@ import os
 from fuel_upgrade.tests.base import BaseTestCase
 
 from fuel_upgrade.pre_upgrade_hooks.base import PreUpgradeHookBase
+from fuel_upgrade.pre_upgrade_hooks.from_5_0_1_to_any_fix_host_system_repo \
+    import FixHostSystemRepoHook
 from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_add_credentials \
     import AddCredentialsHook
 from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_fix_puppet_manifests \
     import FixPuppetManifests
-from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_kill_supervisord \
-    import KillSupervisordHook
 from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_sync_dns \
     import SyncDnsHook
 from fuel_upgrade.pre_upgrade_hooks import PreUpgradeHookManager
@@ -204,31 +204,65 @@ class TestFixPuppetManifestHook(TestPreUpgradeHooksBase):
                 '/etc/puppet/manifests/centos-versions.yaml')])
 
 
-class TestKillSupervisordHook(TestPreUpgradeHooksBase):
+class TestFixHostSystemRepoHook(TestPreUpgradeHooksBase):
 
     def setUp(self):
-        super(TestKillSupervisordHook, self).setUp()
-        self.hook = KillSupervisordHook(self.upgraders, self.fake_config)
+        super(TestFixHostSystemRepoHook, self).setUp()
 
-    def test_is_required_returns_true(self):
-        self.hook.config.from_version = '5.0'
+        conf = self.fake_config
+        conf.from_version = '5.0.1'
+
+        self.hook = FixHostSystemRepoHook(self.upgraders, conf)
+
+    @mock.patch(
+        'fuel_upgrade.pre_upgrade_hooks.'
+        'from_5_0_1_to_any_fix_host_system_repo.'
+        'utils.file_exists', return_value=True)
+    def test_is_required_returns_true(self, exists_mock):
+        self.hook.config.from_version = '5.0.1'
         self.assertTrue(self.hook.check_if_required())
+        self.assertEqual(
+            exists_mock.call_args_list,
+            [mock.call('/var/www/nailgun/5.0.1/centos/x86_64'),
+             mock.call('/etc/yum.repos.d/5.0.1_nailgun.repo')])
 
     def test_is_required_returns_false(self):
+        self.hook.config.from_version = '5.0'
+        self.assertFalse(self.hook.check_if_required())
+
         self.hook.config.from_version = '5.1'
         self.assertFalse(self.hook.check_if_required())
 
     @mock.patch(
-        'fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_kill_supervisord.'
-        'safe_exec_cmd')
-    def test_run(self, exec_cmd):
-        self.hook.run()
+        'fuel_upgrade.pre_upgrade_hooks.'
+        'from_5_0_1_to_any_fix_host_system_repo.'
+        'utils.file_exists', return_value=False)
+    def test_is_required_returns_false_if_repo_file_does_not_exist(self, _):
+        self.assertFalse(self.hook.check_if_required())
 
-        exec_cmd.assert_has_calls([
-            mock.call('kill -9 `cat /var/run/supervisord.pid`'),
-            mock.call('rm -f /var/run/supervisord.pid'),
-            mock.call('pkill -f "docker.*D.*attach.*fuel-core"'),
-            mock.call('pkill -f "dockerctl.*start.*attach"')])
+    @mock.patch(
+        'fuel_upgrade.pre_upgrade_hooks.'
+        'from_5_0_1_to_any_fix_host_system_repo.'
+        'utils.file_exists', side_effect=[True, False])
+    def test_is_required_returns_false_repo_does_not_exist(self, _):
+        self.assertFalse(self.hook.check_if_required())
+
+    @mock.patch(
+        'fuel_upgrade.pre_upgrade_hooks.'
+        'from_5_0_1_to_any_fix_host_system_repo.utils')
+    def test_run(self, mock_utils):
+        self.hook.run()
+        args, _ = mock_utils.render_template_to_file.call_args_list[0]
+        # The first argument is a path to
+        # template in upgrade script directory
+        # it can be different and depends on
+        # code allocation
+        self.assertTrue(args[0].endswith('templates/nailgun.repo'))
+        self.assertEqual(
+            args[1:],
+            ('/etc/yum.repos.d/5.0.1_nailgun.repo',
+             {'repo_path': '/var/www/nailgun/5.0.1/centos/x86_64',
+              'version': '5.0.1'}))
 
 
 class TestPreUpgradeHookBase(TestPreUpgradeHooksBase):

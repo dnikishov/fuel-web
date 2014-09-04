@@ -50,6 +50,7 @@ class NeutronManager(NetworkManager):
             name='public'
         ).first()
         join_range = lambda r: (":".join(map(str, r)) if r else None)
+        new_env = (cluster.release.version in ("2014.1.1-5.1",))
         return {
             "L3": {
                 "subnet": public_cidr,
@@ -60,10 +61,10 @@ class NeutronManager(NetworkManager):
                 "enable_dhcp": False
             },
             "L2": {
-                "network_type": "flat",
+                "network_type": "local" if new_env else "flat",
                 "segment_id": None,
                 "router_ext": True,
-                "physnet": "physnet1"
+                "physnet": None if new_env else "physnet1"
             },
             "tenant": "admin",
             "shared": False
@@ -103,13 +104,13 @@ class NeutronManager(NetworkManager):
         res = {
             "base_mac": cluster.network_config.base_mac,
             "segmentation_type": cluster.network_config.segmentation_type,
-            "phys_nets": {
-                "physnet1": {
-                    "bridge": "br-ex",
-                    "vlan_range": None
-                }
-            }
+            "phys_nets": {}
         }
+        if cluster.release.version not in ("2014.1.1-5.1",):
+            res["phys_nets"]["physnet1"] = {
+                "bridge": "br-ex",
+                "vlan_range": None
+            }
         if cluster.network_config.segmentation_type == 'gre':
             res["tunnel_id_ranges"] = join_range(
                 cluster.network_config.gre_id_range)

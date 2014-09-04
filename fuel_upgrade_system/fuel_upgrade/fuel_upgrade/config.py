@@ -121,15 +121,17 @@ def get_endpoints(astute_config):
     rabbitmq_mcollective_access = astute_config.get(
         'mcollective', {'user': 'mcollective', 'password': 'marionette'})
 
+    keystone_credentials = {
+        'username': fuel_access['user'],
+        'password': fuel_access['password'],
+        'auth_url': 'http://{0}:5000/v2.0/tokens'.format(master_ip),
+        'tenant_name': 'admin'}
+
     return {
         'nginx_nailgun': {
             'port': 8000,
             'host': '0.0.0.0',
-            'keystone_credentials': {
-                'username': fuel_access['user'],
-                'password': fuel_access['password'],
-                'auth_url': 'http://{0}:5000/v2.0/tokens'.format(master_ip),
-                'tenant_name': 'admin'}},
+            'keystone_credentials': keystone_credentials},
 
         'nginx_repo': {
             'port': 8080,
@@ -137,7 +139,8 @@ def get_endpoints(astute_config):
 
         'ostf': {
             'port': 8777,
-            'host': '127.0.0.1'},
+            'host': '127.0.0.1',
+            'keystone_credentials': keystone_credentials},
 
         'cobbler': {
             'port': 80,
@@ -191,14 +194,15 @@ def get_host_system(update_path, new_version):
     """
     openstack_versions = glob.glob(
         join(update_path, 'puppet', '[0-9.-]*{0}'.format(new_version)))
-    openstack_versions = [
-        basename(v) for v in openstack_versions]
+    openstack_versions = [basename(v) for v in openstack_versions]
     openstack_version = sorted(openstack_versions, reverse=True)[0]
+    centos_repo_path = join(
+        update_path, 'repos', openstack_version, 'centos/x86_64')
 
     return {
         'manifest_path': join(
             update_path, 'puppet', openstack_version,
-            'modules/nailgun/examples/host-only.pp'),
+            'modules/nailgun/examples/host-upgrade.pp'),
 
         'puppet_modules_path': join(
             update_path, 'puppet', openstack_version, 'modules'),
@@ -207,8 +211,10 @@ def get_host_system(update_path, new_version):
             '/etc/yum.repos.d',
             '{0}_nailgun.repo'.format(new_version)),
 
-        'repo_path': join(
-            update_path, 'repos', openstack_version, 'centos/x86_64')}
+        'repo_path': {
+            'src': centos_repo_path,
+            'dst': join(
+                '/var/www/nailgun', openstack_version, 'centos/x86_64')}}
 
 
 def config(update_path):
@@ -235,6 +241,9 @@ def config(update_path):
         current_fuel_version_path, from_version_path)
     previous_version_path = join('/etc/fuel', from_version, 'version.yaml')
 
+    astute_container_keys_path = '/var/lib/astute'
+    astute_keys_path = join(working_directory, 'astute')
+
     cobbler_container_config_path = '/var/lib/cobbler/config'
     cobbler_config_path = join(working_directory, 'cobbler_configs')
     cobbler_config_files_for_verifier = join(
@@ -242,6 +251,8 @@ def config(update_path):
 
     # Keep only 3 latest database files
     keep_db_backups_count = 3
+    db_backup_timeout = 25
+    db_backup_interval = 4
 
     current_fuel_astute_path = '/etc/fuel/astute.yaml'
     astute = read_yaml_config(current_fuel_astute_path)
@@ -263,7 +274,7 @@ def config(update_path):
         'url': 'unix://var/run/docker.sock',
         'api_version': '1.10',
         'http_timeout': 160,
-        'stop_container_timeout': 10,
+        'stop_container_timeout': 20,
         'dir': '/var/lib/docker'}
 
     # Docker image description section
@@ -363,13 +374,17 @@ def config(update_path):
         {'id': 'astute',
          'supervisor_config': True,
          'from_image': 'astute',
+         'after_container_creation_command': (
+             "bash -c 'cp -rn /tmp/upgrade/astute/ "
+             "/var/lib/astute/'"),
          'links': [
              {'id': 'rabbitmq', 'alias': 'rabbitmq'}],
          'volumes_from': [
              'volume_logs',
              'volume_repos',
              'volume_ssh_keys',
-             'volume_fuel_configs']},
+             'volume_fuel_configs',
+             'volume_upgrade_directory']},
 
         {'id': 'cobbler',
          'supervisor_config': True,

@@ -16,12 +16,12 @@
 
 import logging
 
+from fuel_upgrade.pre_upgrade_hooks.from_5_0_1_to_any_fix_host_system_repo \
+    import FixHostSystemRepoHook
 from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_add_credentials \
     import AddCredentialsHook
 from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_fix_puppet_manifests \
     import FixPuppetManifests
-from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_kill_supervisord \
-    import KillSupervisordHook
 from fuel_upgrade.pre_upgrade_hooks.from_5_0_to_any_sync_dns \
     import SyncDnsHook
 
@@ -40,7 +40,7 @@ class PreUpgradeHookManager(object):
     hook_list = [
         AddCredentialsHook,
         FixPuppetManifests,
-        KillSupervisordHook,
+        FixHostSystemRepoHook,
         SyncDnsHook]
 
     def __init__(self, upgraders, config):
