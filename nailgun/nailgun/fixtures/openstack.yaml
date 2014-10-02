@@ -79,14 +79,11 @@
     volumes_metadata:
       volumes_roles_mapping:
         controller:
-          - {allocate_size: "min", id: "os"}
-          - {allocate_size: "all", id: "image"}
+          - {allocate_size: "all", id: "os"}
         compute:
-          - {allocate_size: "min", id: "os"}
-          - {allocate_size: "all", id: "vm"}
+          - {allocate_size: "all", id: "os"}
         cinder:
-          - {allocate_size: "min", id: "os"}
-          - {allocate_size: "all", id: "cinder"}
+          - {allocate_size: "all", id: "os"}
         other:
           - {allocate_size: "all", id: "os"}
       volumes:
@@ -219,6 +216,18 @@
             regex:
               source: &valid_cluster_name '^([^,\ ]+([\ ]*[^,\ ])*)(,[^,\ ]+([\ ]*[^,\ ])*)*$'
               error: "Invalid cluster list"
+          datacenter:
+            value: ""
+            label: "Datacenter"
+            description: "vCenter datacenter name. Used for glance."
+            weight: 50
+            type: "text"
+          datastore:
+            value: ""
+            label: "Datastore"
+            description: "vCenter datastore to use."
+            weight: 60
+            type: "text"
         nsx_plugin:
           metadata:
             enabled: false
